@@ -1,44 +1,35 @@
-import './globals.css'
-import type { Metadata } from 'next'
+import type { Metadata } from "next";
+import "./globals.css";
 
 export const metadata: Metadata = {
-  title: 'ROBTEC Training Management',
-  description: 'Verwaltung von Roboterschulungen und Zertifikaten',
-}
+  title: "ROBTEC Training Management",
+  description: "Schulungsverwaltung & Zertifizierung",
+};
 
 export default function RootLayout({
   children,
-}: {
-  children: React.ReactNode
-}) {
+}: Readonly<{
+  children: React.ReactNode;
+}>) {
   return (
     <html lang="de">
       <body>
-        <div className="min-h-screen bg-gray-50">
-          <header className="bg-blue-600 text-white shadow-lg">
-            <div className="container mx-auto px-4 py-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h1 className="text-2xl font-bold">ROBTEC Training Management</h1>
-                  <p className="text-sm text-blue-100">Schulungsverwaltung & Zertifizierung</p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-blue-200">Version 1.2.0</p>
-                  <p className="text-xs text-blue-300">Ganztägige Events Support</p>
-                </div>
+        <header className="bg-gradient-to-r from-blue-600 to-blue-800 text-white shadow-lg">
+          <div className="max-w-7xl mx-auto px-8 py-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h1 className="text-2xl font-bold">ROBTEC Training Management</h1>
+                <p className="text-blue-100 text-sm mt-1">Schulungsverwaltung & Zertifizierung</p>
+              </div>
+              <div className="text-right">
+                <div className="text-sm text-blue-100">Version 1.4.1</div>
+                <div className="text-xs text-blue-200 mt-1">Calendar Sync Ready</div>
               </div>
             </div>
-          </header>
-          <main className="container mx-auto px-4 py-8">
-            {children}
-          </main>
-          <footer className="bg-gray-800 text-white mt-12">
-            <div className="container mx-auto px-4 py-6 text-center text-sm">
-              <p>&copy; {new Date().getFullYear()} ROBTEC GmbH. Alle Rechte vorbehalten.</p>
-            </div>
-          </footer>
-        </div>
+          </div>
+        </header>
+        {children}
       </body>
     </html>
-  )
+  );
 }
