@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import NeueSchulungModal from '@/components/NeueSchulungModal';
 
 interface Schulung {
   id: string;
@@ -25,6 +26,7 @@ export default function SchulungenPage() {
   const [filteredSchulungen, setFilteredSchulungen] = useState<Schulung[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [showNeueSchulungModal, setShowNeueSchulungModal] = useState(false);
 
   // Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -174,12 +176,12 @@ export default function SchulungenPage() {
               >
                 ← Zurück zum Dashboard
               </Link>
-              <Link
-                href="/schulungen/neu"
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              <button
+                onClick={() => setShowNeueSchulungModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
               >
-                + Neue Schulung
-              </Link>
+                ✨ Neue Schulung
+              </button>
             </div>
           </div>
         </div>
@@ -442,6 +444,15 @@ export default function SchulungenPage() {
           </div>
         )}
       </div>
+
+      {/* Modal */}
+      <NeueSchulungModal
+        isOpen={showNeueSchulungModal}
+        onClose={() => {
+          setShowNeueSchulungModal(false);
+          loadSchulungen(); // Reload after creating
+        }}
+      />
     </div>
   );
 }
