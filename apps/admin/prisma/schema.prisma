@@ -1,0 +1,251 @@
+// ROBTEC Training Management System
+// Prisma Schema für PostgreSQL (Neon)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// SCHULUNGEN
+// ============================================================================
+
+model Schulung {
+  id                String       @id @default(cuid())
+  titel             String
+  beschreibung      String?      @db.Text
+  typ               SchulungsTyp
+  hersteller        Hersteller
+  startDatum        DateTime
+  endDatum          DateTime
+  dauer             Int          // Anzahl Tage
+  maxTeilnehmer     Int
+  preis             Decimal      @db.Decimal(10, 2)
+  status            SchulungsStatus @default(geplant)
+  
+  // Ort & Raum
+  ort               String?
+  raum              String?
+  
+  // Trainer
+  trainer           String?
+  
+  // Google Calendar Integration
+  calendarEventId   String?      @unique
+  lastSyncedAt      DateTime?
+  
+  // Relationen
+  anmeldungen       Anmeldung[]
+  termine           Termin[]
+  zertifikate       Zertifikat[]
+  
+  // Timestamps
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  @@index([startDatum])
+  @@index([status])
+  @@index([typ])
+  @@index([hersteller])
+  @@index([calendarEventId])
+}
+
+enum SchulungsTyp {
+  grundlagen
+  praxis
+  online
+  sonstige
+}
+
+enum Hersteller {
+  kuka
+  abb
+  mitsubishi
+  universal_robots
+  sonstige
+}
+
+enum SchulungsStatus {
+  geplant
+  bestaetigt
+  laufend
+  abgeschlossen
+  abgesagt
+}
+
+// ============================================================================
+// TERMINE
+// ============================================================================
+
+model Termin {
+  id                String       @id @default(cuid())
+  schulungId        String
+  schulung          Schulung     @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  
+  datum             DateTime
+  startzeit         String       // Format: "09:00"
+  endzeit           String       // Format: "17:00"
+  raum              String?
+  notizen           String?      @db.Text
+  
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  @@index([schulungId])
+  @@index([datum])
+}
+
+// ============================================================================
+// TEILNEHMER & ANMELDUNGEN
+// ============================================================================
+
+model Teilnehmer {
+  id                String       @id @default(cuid())
+  
+  // Persönliche Daten
+  vorname           String
+  nachname          String
+  email             String       @unique
+  telefon           String?
+  firma             String?
+  position          String?
+  
+  // Adresse
+  strasse           String?
+  plz               String?
+  ort               String?
+  land              String?      @default("DE")
+  
+  // Relationen
+  anmeldungen       Anmeldung[]
+  zertifikate       Zertifikat[]
+  
+  // Timestamps
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  @@index([email])
+  @@index([firma])
+}
+
+model Anmeldung {
+  id                String           @id @default(cuid())
+  schulungId        String
+  schulung          Schulung         @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  teilnehmerId      String
+  teilnehmer        Teilnehmer       @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
+  
+  status            AnmeldungsStatus @default(angemeldet)
+  anmeldedatum      DateTime         @default(now())
+  bezahlstatus      BezahlStatus     @default(offen)
+  bezahldatum       DateTime?
+  stornodatum       DateTime?
+  stornogrund       String?          @db.Text
+  
+  // Besondere Anforderungen
+  bemerkungen       String?          @db.Text
+  
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  
+  @@unique([schulungId, teilnehmerId])
+  @@index([schulungId])
+  @@index([teilnehmerId])
+  @@index([status])
+}
+
+enum AnmeldungsStatus {
+  angemeldet
+  bestaetigt
+  teilgenommen
+  nicht_erschienen
+  storniert
+}
+
+enum BezahlStatus {
+  offen
+  bezahlt
+  erstattet
+}
+
+// ============================================================================
+// ZERTIFIKATE
+// ============================================================================
+
+model Zertifikat {
+  id                String       @id @default(cuid())
+  schulungId        String
+  schulung          Schulung     @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  teilnehmerId      String
+  teilnehmer        Teilnehmer   @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
+  
+  zertifikatsnummer String       @unique
+  ausstellungsdatum DateTime     @default(now())
+  
+  // Validierung
+  qrCode            String       @unique // SHA-256 Hash für Validierung
+  validierungsUrl   String
+  
+  // Dateien
+  pdfUrl            String?      // Google Drive Link
+  pdfFileId         String?      // Google Drive File ID
+  
+  // Gültigkeit
+  gueltigBis        DateTime?
+  
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  
+  @@unique([schulungId, teilnehmerId])
+  @@index([schulungId])
+  @@index([teilnehmerId])
+  @@index([zertifikatsnummer])
+  @@index([qrCode])
+}
+
+// ============================================================================
+// SYSTEM & LOGS
+// ============================================================================
+
+model SyncLog {
+  id                String       @id @default(cuid())
+  typ               SyncTyp
+  status            SyncStatus
+  
+  // Statistiken
+  eventsGeprueft    Int          @default(0)
+  eventsImportiert  Int          @default(0)
+  eventsAktualisiert Int         @default(0)
+  eventsExportiert  Int          @default(0)
+  fehler            Int          @default(0)
+  
+  // Details
+  fehlermeldung     String?      @db.Text
+  details           Json?
+  
+  // Zeitstempel
+  startedAt         DateTime     @default(now())
+  completedAt       DateTime?
+  
+  createdAt         DateTime     @default(now())
+  
+  @@index([typ])
+  @@index([status])
+  @@index([startedAt])
+}
+
+enum SyncTyp {
+  import_calendar
+  export_calendar
+  full_sync
+}
+
+enum SyncStatus {
+  running
+  completed
+  failed
+}
