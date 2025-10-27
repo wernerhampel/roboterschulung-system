@@ -10,6 +10,14 @@ type SyncResult = {
   eventsCreated: number;
   errors: string[];
   summary: string;
+  debug?: {
+    totalEventsFound: number;
+    eventsProcessed: number;
+    eventsSkipped: number;
+    calendarId: string;
+    timeRange: { start: string; end: string };
+    sampleEvent?: any;
+  };
 };
 
 export default function SyncPage() {
@@ -192,6 +200,51 @@ export default function SyncPage() {
                         <p className="text-2xl font-bold text-yellow-600">{result.from.eventsUpdated}</p>
                       </div>
                     </div>
+                    
+                    {/* Debug Info */}
+                    {result.from.debug && (
+                      <details className="mt-4 pt-4 border-t">
+                        <summary className="cursor-pointer text-sm font-semibold text-gray-700 hover:text-gray-900">
+                          🔍 Debug-Informationen anzeigen
+                        </summary>
+                        <div className="mt-3 space-y-2 text-sm bg-gray-50 p-3 rounded">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <span className="font-semibold">Events im Calendar:</span>
+                              <span className="ml-2">{result.from.debug.totalEventsFound}</span>
+                            </div>
+                            <div>
+                              <span className="font-semibold">Verarbeitet:</span>
+                              <span className="ml-2">{result.from.debug.eventsProcessed}</span>
+                            </div>
+                            <div>
+                              <span className="font-semibold">Übersprungen:</span>
+                              <span className="ml-2">{result.from.debug.eventsSkipped}</span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="font-semibold">Calendar ID:</span>
+                              <span className="ml-2 text-xs font-mono">{result.from.debug.calendarId}</span>
+                            </div>
+                            <div className="col-span-2">
+                              <span className="font-semibold">Zeitraum:</span>
+                              <div className="ml-2 text-xs">
+                                <div>Von: {new Date(result.from.debug.timeRange.start).toLocaleString('de-DE')}</div>
+                                <div>Bis: {new Date(result.from.debug.timeRange.end).toLocaleString('de-DE')}</div>
+                              </div>
+                            </div>
+                            {result.from.debug.sampleEvent && (
+                              <div className="col-span-2 pt-2 border-t">
+                                <span className="font-semibold">Beispiel-Event:</span>
+                                <pre className="mt-1 text-xs bg-white p-2 rounded overflow-x-auto">
+                                  {JSON.stringify(result.from.debug.sampleEvent, null, 2)}
+                                </pre>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </details>
+                    )}
+                    
                     {result.from.errors.length > 0 && (
                       <div className="mt-4 pt-4 border-t">
                         <p className="text-sm font-semibold text-red-800 mb-2">Fehler:</p>

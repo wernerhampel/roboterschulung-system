@@ -28,6 +28,14 @@ export type SyncResult = {
   eventsCreated: number;
   errors: string[];
   summary: string;
+  debug?: {
+    totalEventsFound: number;
+    eventsProcessed: number;
+    eventsSkipped: number;
+    calendarId: string;
+    timeRange: { start: string; end: string };
+    sampleEvent?: any;
+  };
 };
 
 /**
@@ -53,6 +61,11 @@ export async function syncFromCalendar(): Promise<SyncResult> {
     const sixMonthsFromNow = new Date();
     sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
 
+    console.log('📅 Syncing from Calendar...', {
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      timeRange: { start: now.toISOString(), end: sixMonthsFromNow.toISOString() }
+    });
+
     const response = await calendar.events.list({
       calendarId: process.env.GOOGLE_CALENDAR_ID!,
       timeMin: now.toISOString(),
@@ -62,12 +75,54 @@ export async function syncFromCalendar(): Promise<SyncResult> {
     });
 
     const events = response.data.items || [];
+    
+    console.log(`📊 Found ${events.length} events in calendar`);
+
+    // Add debug info
+    result.debug = {
+      totalEventsFound: events.length,
+      eventsProcessed: 0,
+      eventsSkipped: 0,
+      calendarId: process.env.GOOGLE_CALENDAR_ID || '',
+      timeRange: {
+        start: now.toISOString(),
+        end: sixMonthsFromNow.toISOString(),
+      },
+      sampleEvent: events.length > 0 ? {
+        id: events[0].id,
+        summary: events[0].summary,
+        start: events[0].start,
+        end: events[0].end,
+      } : null,
+    };
 
     for (const event of events) {
       try {
-        if (!event.id || !event.summary || !event.start?.dateTime) {
+        if (!event.id || !event.summary) {
+          console.log('⏭️  Skipping event (no id or summary):', event);
+          if (result.debug) result.debug.eventsSkipped++;
           continue; // Skip events without required data
         }
+
+        // Support both timed events (dateTime) and all-day events (date)
+        const startDate = event.start?.dateTime || event.start?.date;
+        const endDate = event.end?.dateTime || event.end?.date;
+
+        if (!startDate) {
+          console.log('⏭️  Skipping event (no start date):', event.summary);
+          if (result.debug) result.debug.eventsSkipped++;
+          continue; // Skip events without start date
+        }
+
+        console.log('✅ Processing event:', {
+          id: event.id,
+          summary: event.summary,
+          startDate,
+          endDate,
+          isAllDay: !!event.start?.date,
+        });
+
+        if (result.debug) result.debug.eventsProcessed++;
 
         // Check if schulung with this calendar event ID exists
         const existingSchulung = await sql`
@@ -93,8 +148,8 @@ export async function syncFromCalendar(): Promise<SyncResult> {
           if (schulung.termin_id) {
             await sql`
               UPDATE termine
-              SET start_datum = ${new Date(event.start.dateTime!).toISOString().split('T')[0]},
-                  end_datum = ${new Date(event.end?.dateTime || event.start.dateTime!).toISOString().split('T')[0]},
+              SET start_datum = ${new Date(startDate).toISOString().split('T')[0]},
+                  end_datum = ${new Date(endDate || startDate).toISOString().split('T')[0]},
                   standort = ${event.location || ''},
                   updated_at = NOW()
               WHERE id = ${schulung.termin_id}
@@ -121,9 +176,9 @@ export async function syncFromCalendar(): Promise<SyncResult> {
           else if (title.includes('SONDER')) typ = 'Sonder';
 
           // Calculate duration in days
-          const startDate = new Date(event.start.dateTime!);
-          const endDate = new Date(event.end?.dateTime || event.start.dateTime!);
-          const durationDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) || 1;
+          const eventStartDate = new Date(startDate);
+          const eventEndDate = new Date(endDate || startDate);
+          const durationDays = Math.ceil((eventEndDate.getTime() - eventStartDate.getTime()) / (1000 * 60 * 60 * 24)) || 1;
 
           // Create schulung
           const newSchulung = await sql`
@@ -163,8 +218,8 @@ export async function syncFromCalendar(): Promise<SyncResult> {
             )
             VALUES (
               ${schulungId},
-              ${startDate.toISOString().split('T')[0]},
-              ${endDate.toISOString().split('T')[0]},
+              ${eventStartDate.toISOString().split('T')[0]},
+              ${eventEndDate.toISOString().split('T')[0]},
               ${event.location || ''},
               'geplant'
             )

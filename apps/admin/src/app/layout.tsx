@@ -17,8 +17,16 @@ export default function RootLayout({
         <div className="min-h-screen bg-gray-50">
           <header className="bg-blue-600 text-white shadow-lg">
             <div className="container mx-auto px-4 py-4">
-              <h1 className="text-2xl font-bold">ROBTEC Training Management</h1>
-              <p className="text-sm text-blue-100">Schulungsverwaltung & Zertifizierung</p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h1 className="text-2xl font-bold">ROBTEC Training Management</h1>
+                  <p className="text-sm text-blue-100">Schulungsverwaltung & Zertifizierung</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-xs text-blue-200">Version 1.2.0</p>
+                  <p className="text-xs text-blue-300">Ganztägige Events Support</p>
+                </div>
+              </div>
             </div>
           </header>
           <main className="container mx-auto px-4 py-8">
