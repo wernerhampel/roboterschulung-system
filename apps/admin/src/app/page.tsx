@@ -119,6 +119,20 @@ export default async function HomePage() {
             </div>
           </div>
         </Link>
+
+        <Link href="/sync" className="card hover:shadow-lg transition-shadow border-2 border-blue-500">
+          <div className="flex items-start space-x-4">
+            <div className="bg-blue-100 p-3 rounded-lg">
+              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold text-gray-900">Calendar Sync</h3>
+              <p className="text-sm text-gray-600 mt-1">Google Calendar synchronisieren</p>
+            </div>
+          </div>
+        </Link>
       </div>
 
       {/* Recent Schulungen */}
