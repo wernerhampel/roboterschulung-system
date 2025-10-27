@@ -1,0 +1,22 @@
+{
+  "name": "roboterschulung-system",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ROBTEC Training Management System - Admin & Validation",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:admin": "npm run dev --workspace=apps/admin",
+    "dev:verify": "npm run dev --workspace=apps/verify",
+    "build:admin": "npm run build --workspace=apps/admin",
+    "build:verify": "npm run build --workspace=apps/verify",
+    "lint": "npm run lint --workspaces",
+    "clean": "rm -rf node_modules apps/*/node_modules apps/*/.next packages/*/node_modules"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  }
+}
