@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
+import TeilnehmerModal, { TeilnehmerFormData } from '@/components/TeilnehmerModal';
+import SchulungEditModal, { SchulungFormData } from '@/components/SchulungEditModal';
 
 interface Schulung {
   id: string;
@@ -45,12 +47,18 @@ interface Anmeldung {
 
 export default function SchulungDetailsPage() {
   const params = useParams();
+  const router = useRouter();
   const id = params?.id as string;
   
   const [schulung, setSchulung] = useState<Schulung | null>(null);
   const [anmeldungen, setAnmeldungen] = useState<Anmeldung[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Modal states
+  const [showTeilnehmerModal, setShowTeilnehmerModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -82,6 +90,78 @@ export default function SchulungDetailsPage() {
       setError(err instanceof Error ? err.message : 'Ein Fehler ist aufgetreten');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleTeilnehmerSave(data: TeilnehmerFormData) {
+    const response = await fetch(`/api/schulungen/${id}/anmeldungen`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        teilnehmer: {
+          vorname: data.vorname,
+          nachname: data.nachname,
+          email: data.email,
+          telefon: data.telefon,
+          firma: data.firma,
+          position: data.position,
+          strasse: data.strasse,
+          plz: data.plz,
+          ort: data.ort,
+          land: data.land
+        },
+        status: data.status,
+        bezahlstatus: data.bezahlstatus,
+        bemerkungen: data.bemerkungen
+      })
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Fehler beim Speichern');
+    }
+
+    // Reload data
+    await loadSchulungDetails();
+  }
+
+  async function handleSchulungSave(data: SchulungFormData) {
+    const response = await fetch(`/api/schulungen/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Fehler beim Speichern');
+    }
+
+    // Reload data
+    await loadSchulungDetails();
+  }
+
+  async function handleDelete() {
+    if (!confirm('Möchten Sie diese Schulung wirklich löschen?')) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      const response = await fetch(`/api/schulungen/${id}`, {
+        method: 'DELETE'
+      });
+
+      if (!response.ok) {
+        throw new Error('Fehler beim Löschen');
+      }
+
+      // Redirect to list
+      router.push('/schulungen');
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Fehler beim Löschen');
+    } finally {
+      setActionLoading(false);
     }
   }
 
@@ -227,10 +307,16 @@ export default function SchulungDetailsPage() {
               </div>
             </div>
             <div className="flex gap-3">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <button 
+                onClick={() => setShowEditModal(true)}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
                 Bearbeiten
               </button>
-              <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+              <button 
+                onClick={() => setShowTeilnehmerModal(true)}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
+              >
                 + Teilnehmer
               </button>
             </div>
@@ -334,7 +420,10 @@ export default function SchulungDetailsPage() {
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Teilnehmer ({anmeldungen.length})</h2>
-                <button className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm">
+                <button 
+                  onClick={() => setShowTeilnehmerModal(true)}
+                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                >
                   + Teilnehmer hinzufügen
                 </button>
               </div>
@@ -402,10 +491,16 @@ export default function SchulungDetailsPage() {
             <div className="bg-white rounded-lg shadow-sm border p-6">
               <h3 className="font-semibold mb-4">Aktionen</h3>
               <div className="space-y-2">
-                <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-left">
+                <button 
+                  onClick={() => setShowEditModal(true)}
+                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-left"
+                >
                   📝 Schulung bearbeiten
                 </button>
-                <button className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-left">
+                <button 
+                  onClick={() => setShowTeilnehmerModal(true)}
+                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-left"
+                >
                   👥 Teilnehmer hinzufügen
                 </button>
                 <button className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left">
@@ -414,7 +509,11 @@ export default function SchulungDetailsPage() {
                 <button className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-left">
                   📧 E-Mail senden
                 </button>
-                <button className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left">
+                <button 
+                  onClick={handleDelete}
+                  disabled={actionLoading}
+                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left disabled:opacity-50"
+                >
                   🗑️ Schulung löschen
                 </button>
               </div>
@@ -459,6 +558,40 @@ export default function SchulungDetailsPage() {
           </div>
         </div>
       </div>
+
+      {/* Modals */}
+      {schulung && (
+        <>
+          <TeilnehmerModal
+            isOpen={showTeilnehmerModal}
+            onClose={() => setShowTeilnehmerModal(false)}
+            onSave={handleTeilnehmerSave}
+            schulungId={id}
+          />
+
+          <SchulungEditModal
+            isOpen={showEditModal}
+            onClose={() => setShowEditModal(false)}
+            onSave={handleSchulungSave}
+            schulung={{
+              id: schulung.id,
+              titel: schulung.titel,
+              beschreibung: schulung.beschreibung,
+              typ: schulung.typ,
+              hersteller: schulung.hersteller,
+              startDatum: schulung.startDatum,
+              endDatum: schulung.endDatum,
+              dauer: schulung.dauer,
+              maxTeilnehmer: schulung.maxTeilnehmer,
+              preis: schulung.preis,
+              status: schulung.status,
+              ort: schulung.ort,
+              raum: schulung.raum,
+              trainer: schulung.trainer
+            }}
+          />
+        </>
+      )}
     </div>
   );
 }
