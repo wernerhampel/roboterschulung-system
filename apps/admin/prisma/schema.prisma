@@ -176,35 +176,45 @@ enum BezahlStatus {
 // ZERTIFIKATE
 // ============================================================================
 
+enum ZertifikatStatus {
+  aktiv
+  widerrufen
+  abgelaufen
+}
+
 model Zertifikat {
-  id                String       @id @default(cuid())
+  id                String            @id @default(cuid())
   schulungId        String
-  schulung          Schulung     @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  schulung          Schulung          @relation(fields: [schulungId], references: [id], onDelete: Cascade)
   teilnehmerId      String
-  teilnehmer        Teilnehmer   @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
+  teilnehmer        Teilnehmer        @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
   
-  zertifikatsnummer String       @unique
-  ausstellungsdatum DateTime     @default(now())
+  zertifikatsnummer String            @unique
+  ausstellungsdatum DateTime          @default(now())
   
   // Validierung
-  qrCode            String       @unique // SHA-256 Hash für Validierung
+  qrCode            String            @unique // SHA-256 Hash für Validierung
   validierungsUrl   String
   
+  // Status
+  status            ZertifikatStatus  @default(aktiv)
+  
   // Dateien
-  pdfUrl            String?      // Google Drive Link
-  pdfFileId         String?      // Google Drive File ID
+  pdfUrl            String?           // Google Drive Link
+  pdfFileId         String?           // Google Drive File ID
   
   // Gültigkeit
   gueltigBis        DateTime?
   
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
   
   @@unique([schulungId, teilnehmerId])
   @@index([schulungId])
   @@index([teilnehmerId])
   @@index([zertifikatsnummer])
   @@index([qrCode])
+  @@index([status])
 }
 
 // ============================================================================
