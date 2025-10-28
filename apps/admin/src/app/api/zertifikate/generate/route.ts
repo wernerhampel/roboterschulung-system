@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
           dauer: schulung.dauer
         },
         ausstellungsdatum: existingCert.ausstellungsdatum,
-        gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
+        gueltigBis: existingCert.gueltigbis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
       });
 
       return NextResponse.json({
@@ -95,30 +95,29 @@ export async function POST(request: NextRequest) {
     
     const zertifikatNummer = `ROBT-${year}-${String(count + 1).padStart(5, '0')}`;
     
-    // Generiere Validierungs-Hash (qrCode)
+    // Generiere Validierungs-Hash
     const crypto = require('crypto');
     const validierungsHash = crypto
       .createHash('sha256')
       .update(`${zertifikatNummer}-${teilnehmerId}-${schulungId}-${Date.now()}`)
       .digest('hex');
 
-    // Validierungs-URL
-    const baseUrl = process.env.NEXT_PUBLIC_VERIFY_URL || 'https://robtec-verify.vercel.app';
-    const validierungsUrl = `${baseUrl}/verify/${validierungsHash}`;
+    // Template basierend auf Schulungstyp
+    const template = `${schulung.hersteller.toLowerCase()}-${schulung.typ.toLowerCase()}`;
 
     // Gültigkeitsdatum (3 Jahre)
     const gueltigBis = new Date();
     gueltigBis.setFullYear(gueltigBis.getFullYear() + 3);
 
-    // Zertifikat in DB erstellen - mit korrekten Feldnamen
+    // Zertifikat in DB erstellen - WICHTIG: lowercase Feldnamen wie im Schema!
     const zertifikat = await prisma.zertifikat.create({
       data: {
         schulungId,
         teilnehmerId,
-        zertifikatsnummer: zertifikatNummer,
-        qrCode: validierungsHash,  // Korrektes Feld!
-        validierungsUrl: validierungsUrl,
-        gueltigBis: gueltigBis,
+        zertifikatsnummer: zertifikatNummer,  // lowercase!
+        validierungshash: validierungsHash,   // lowercase!
+        gueltigbis: gueltigBis,               // lowercase!
+        template,
         status: 'aktiv',
         ausstellungsdatum: new Date()
       }
