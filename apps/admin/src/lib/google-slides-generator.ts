@@ -28,7 +28,7 @@ interface CertificateData {
 }
 
 // Template IDs (aus der code.gs)
-const CERTIFICATE_TEMPLATES = {
+const CERTIFICATE_TEMPLATES: Record<string, string> = {
   'Grundlagen': '1rxSaWl9ZYXC0jTVySCjkwQkgwkFQvO-vif86vZKnAyo',
   'Fortgeschritten': '', // TODO: Template ID eintragen
   'Wartung': '', // TODO: Template ID eintragen
