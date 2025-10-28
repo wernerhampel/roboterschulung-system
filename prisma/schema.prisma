@@ -1,6 +1,5 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
-// CACHE BREAKER v1.6.0 - Force Regeneration with @map()
 
 generator client {
   provider = "prisma-client-js"
@@ -18,8 +17,8 @@ model Schulung {
   beschreibung String?
   typ         SchulungsTyp
   hersteller  Hersteller
-  startDatum  DateTime @map("startdatum")
-  endDatum    DateTime @map("enddatum")
+  startdatum  DateTime
+  enddatum    DateTime
   dauer       Int      // Anzahl Tage
   maxTeilnehmer Int    @default(12)
   ort         String?
@@ -76,12 +75,12 @@ model Zertifikat {
   schulungId          String
   teilnehmerId        String
   
-  zertifikatNummer    String   @unique @map("zertifikatsnummer")
+  zertifikatsnummer   String   @unique
   ausstellungsdatum   DateTime @default(now())
-  gueltigBis          DateTime @map("gueltigbis")
+  gueltigbis          DateTime
   
   template            String   // z.B. "kuka-grundlagen", "abb-praxis"
-  validierungsHash    String   @unique @map("validierungshash")
+  validierungshash    String   @unique
   
   status              ZertifikatStatus @default(aktiv)
   

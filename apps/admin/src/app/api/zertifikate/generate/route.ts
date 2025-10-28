@@ -82,9 +82,9 @@ export async function POST(request: NextRequest) {
       data: {
         schulungId,
         teilnehmerId,
-        zertifikatNummer,
-        validierungsHash,
-        gueltigBis,
+        zertifikatsnummer: zertifikatNummer,
+        validierungshash: validierungsHash,
+        gueltigbis: gueltigBis,
         template,
         status: 'aktiv'
       }
@@ -102,8 +102,8 @@ export async function POST(request: NextRequest) {
         titel: schulung.titel,
         hersteller: schulung.hersteller,
         typ: schulung.typ,
-        startDatum: schulung.startDatum,
-        endDatum: schulung.endDatum,
+        startDatum: schulung.startdatum,
+        endDatum: schulung.enddatum,
         dauer: schulung.dauer
       },
       ausstellungsdatum: new Date(),
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         id: zertifikat.id,
         nummer: zertifikatNummer,
         ausstellungsdatum: zertifikat.ausstellungsdatum,
-        gueltigBis: zertifikat.gueltigBis
+        gueltigBis: zertifikat.gueltigbis
       },
       pdf: pdfData.toString('base64'),
       filename
