@@ -1,10 +1,15 @@
 import Link from 'next/link';
-import { getSchulungen } from '@/lib/db';
+import { prisma } from '@/lib/prisma';
 
 export const dynamic = 'force-dynamic';
 
 export default async function HomePage() {
-  const schulungen = await getSchulungen();
+  const schulungen = await prisma.schulung.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 5
+  });
+
+  const schulungenCount = await prisma.schulung.count();
 
   return (
     <div className="space-y-8">
@@ -19,7 +24,7 @@ export default async function HomePage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="card">
           <h3 className="text-lg font-semibold text-gray-700 mb-2">Schulungen</h3>
-          <p className="text-4xl font-bold text-blue-600">{schulungen.length}</p>
+          <p className="text-4xl font-bold text-blue-600">{schulungenCount}</p>
           <p className="text-sm text-gray-500 mt-2">Gesamt im System</p>
         </div>
         <div className="card">
@@ -159,29 +164,63 @@ export default async function HomePage() {
                 </tr>
               </thead>
               <tbody>
-                {schulungen.slice(0, 5).map((schulung: any) => (
-                  <tr key={schulung.id}>
-                    <td>
-                      <Link href={`/schulungen/${schulung.id}`} className="text-blue-600 hover:underline font-medium">
-                        {schulung.titel}
-                      </Link>
-                    </td>
-                    <td>{schulung.typ}</td>
-                    <td>{schulung.hersteller}</td>
-                    <td>{schulung.dauer_tage} Tage</td>
-                    <td>{schulung.max_teilnehmer}</td>
-                    <td>
-                      <span className={`badge ${
-                        schulung.status === 'aktiv' ? 'badge-success' :
-                        schulung.status === 'geplant' ? 'badge-info' :
-                        schulung.status === 'abgeschlossen' ? 'badge-warning' :
-                        'badge-danger'
-                      }`}>
-                        {schulung.status}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {schulungen.map((schulung) => {
+                  const getTypLabel = (typ: string) => {
+                    const labels: Record<string, string> = {
+                      grundlagen: 'Grundlagen',
+                      praxis: 'Praxis',
+                      online: 'Online',
+                      sonstige: 'Sonstige'
+                    };
+                    return labels[typ] || typ;
+                  };
+
+                  const getHerstellerLabel = (hersteller: string) => {
+                    const labels: Record<string, string> = {
+                      kuka: 'KUKA',
+                      abb: 'ABB',
+                      mitsubishi: 'Mitsubishi',
+                      universal_robots: 'Universal Robots',
+                      sonstige: 'Sonstige'
+                    };
+                    return labels[hersteller] || hersteller;
+                  };
+
+                  const getStatusLabel = (status: string) => {
+                    const labels: Record<string, string> = {
+                      geplant: 'Geplant',
+                      bestaetigt: 'Bestätigt',
+                      laufend: 'Laufend',
+                      abgeschlossen: 'Abgeschlossen',
+                      abgesagt: 'Abgesagt'
+                    };
+                    return labels[status] || status;
+                  };
+
+                  return (
+                    <tr key={schulung.id}>
+                      <td>
+                        <Link href={`/schulungen/${schulung.id}`} className="text-blue-600 hover:underline font-medium">
+                          {schulung.titel}
+                        </Link>
+                      </td>
+                      <td>{getTypLabel(schulung.typ)}</td>
+                      <td>{getHerstellerLabel(schulung.hersteller)}</td>
+                      <td>{schulung.dauer} Tage</td>
+                      <td>{schulung.maxTeilnehmer}</td>
+                      <td>
+                        <span className={`badge ${
+                          schulung.status === 'bestaetigt' ? 'badge-success' :
+                          schulung.status === 'geplant' ? 'badge-info' :
+                          schulung.status === 'abgeschlossen' ? 'badge-warning' :
+                          'badge-danger'
+                        }`}>
+                          {getStatusLabel(schulung.status)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
