@@ -28,12 +28,12 @@ export async function GET(
       where: { id },
       select: {
         id: true,
-        zertifikatNummer: true,
+        zertifikatsnummer: true,
         schulungId: true,
         teilnehmerId: true,
         ausstellungsdatum: true,
         gueltigBis: true,
-        status: true,  // ✅ STATUS FIELD EXPLIZIT HINZUGEFÜGT!
+        status: true,
         schulung: {
           select: {
             titel: true,
@@ -99,7 +99,7 @@ export async function GET(
       valid: true,
       expired: !isStillValid,
       zertifikat: {
-        zertifikatNummer: zertifikat.zertifikatNummer,
+        zertifikatNummer: zertifikat.zertifikatsnummer,
         ausstellungsdatum: zertifikat.ausstellungsdatum,
         gueltigBis: zertifikat.gueltigBis,
         // Teilnehmer-Info (pseudonymisiert falls gewünscht)
