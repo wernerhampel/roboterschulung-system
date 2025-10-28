@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
           startDatum: new Date(schulung.startDatum),
           endDatum: new Date(schulung.endDatum),
           dauer: schulung.dauer,
-          trainer: schulung.trainer,
-          ort: schulung.ort
+          trainer: schulung.trainer || undefined,
+          ort: schulung.ort || undefined
         },
         ausstellungsdatum: existingCert.ausstellungsdatum,
         gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
@@ -139,8 +139,8 @@ export async function POST(request: NextRequest) {
         startDatum: new Date(schulung.startDatum),
         endDatum: new Date(schulung.endDatum),
         dauer: schulung.dauer,
-        trainer: schulung.trainer,
-        ort: schulung.ort
+        trainer: schulung.trainer || undefined,
+        ort: schulung.ort || undefined
       },
       ausstellungsdatum: new Date(),
       gueltigBis
