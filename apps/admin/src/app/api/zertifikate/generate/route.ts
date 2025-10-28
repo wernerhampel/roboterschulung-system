@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       data: {
         schulungId,
         teilnehmerId,
-        zertifikatNummer,
+        zertifikatsnummer: zertifikatNummer,
         validierungsHash,
         gueltigBis,
         template,
