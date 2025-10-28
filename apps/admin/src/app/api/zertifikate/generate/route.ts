@@ -57,6 +57,7 @@ export async function POST(request: NextRequest) {
       console.log('Certificate already exists:', existingCert.zertifikatsnummer);
       
       // Generiere PDF für existierendes Zertifikat neu
+      // WICHTIG: Prisma gibt uns gueltigBis (camelCase) zurück!
       const pdfData = await generateCertificatePDF({
         zertifikatNummer: existingCert.zertifikatsnummer,
         teilnehmer: {
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
           dauer: schulung.dauer
         },
         ausstellungsdatum: existingCert.ausstellungsdatum,
-        gueltigBis: existingCert.gueltigbis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
+        gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)  // camelCase!
       });
 
       return NextResponse.json({
@@ -95,29 +96,34 @@ export async function POST(request: NextRequest) {
     
     const zertifikatNummer = `ROBT-${year}-${String(count + 1).padStart(5, '0')}`;
     
-    // Generiere Validierungs-Hash
+    // Generiere Validierungs-Hash (nach aktuellem Schema: qrCode)
     const crypto = require('crypto');
     const validierungsHash = crypto
       .createHash('sha256')
       .update(`${zertifikatNummer}-${teilnehmerId}-${schulungId}-${Date.now()}`)
       .digest('hex');
 
-    // Template basierend auf Schulungstyp
-    const template = `${schulung.hersteller.toLowerCase()}-${schulung.typ.toLowerCase()}`;
+    // Validierungs-URL
+    const baseUrl = process.env.NEXT_PUBLIC_VERIFY_URL || 'https://robtec-verify.vercel.app';
+    const validierungsUrl = `${baseUrl}/verify/${validierungsHash}`;
 
     // Gültigkeitsdatum (3 Jahre)
     const gueltigBis = new Date();
     gueltigBis.setFullYear(gueltigBis.getFullYear() + 3);
 
-    // Zertifikat in DB erstellen - WICHTIG: lowercase Feldnamen wie im Schema!
+    // Zertifikat in DB erstellen
+    // WICHTIG: Der Error-Output zeigt uns die tatsächlichen Felder:
+    // - qrCode (nicht validierungshash)
+    // - validierungsUrl
+    // - gueltigBis (wird intern zu camelCase)
     const zertifikat = await prisma.zertifikat.create({
       data: {
         schulungId,
         teilnehmerId,
-        zertifikatsnummer: zertifikatNummer,  // lowercase!
-        validierungshash: validierungsHash,   // lowercase!
-        gueltigbis: gueltigBis,               // lowercase!
-        template,
+        zertifikatsnummer: zertifikatNummer,
+        qrCode: validierungsHash,             // Das Schema hat jetzt qrCode!
+        validierungsUrl: validierungsUrl,     // Und validierungsUrl!
+        gueltigBis: gueltigBis,               // camelCase für Prisma
         status: 'aktiv',
         ausstellungsdatum: new Date()
       }
