@@ -1,0 +1,83 @@
+🎓 ZERTIFIKAT-SYSTEM - Schnellstart
+═══════════════════════════════════════════════════════════════
+
+📋 SCHRITT 1: Dependencies
+═══════════════════════════════════════════════════════════════
+
+cd ~/roboterschulung-system/apps/admin
+npm install pdfkit @types/pdfkit qrcode @types/qrcode canvas
+
+
+📋 SCHRITT 2: Environment Variables
+═══════════════════════════════════════════════════════════════
+
+# Generiere Secret:
+openssl rand -base64 32
+
+# In .env.local eintragen:
+CERTIFICATE_SECRET=<dein-generierter-secret>
+NEXT_PUBLIC_APP_URL=https://robtec-admin.vercel.app
+
+# WICHTIG: Auch in Vercel eintragen!
+
+
+📋 SCHRITT 3: Dateien deployen
+═══════════════════════════════════════════════════════════════
+
+cd ~/roboterschulung-system
+
+./update.sh certificate-utils.ts \
+  apps/admin/src/lib/certificate-utils.ts \
+  "Add: Zertifikat Utilities"
+
+./update.sh pdf-generator.ts \
+  apps/admin/src/lib/pdf-generator.ts \
+  "Add: PDF Generator"
+
+./update.sh zertifikat-generate-api.ts \
+  apps/admin/src/app/api/zertifikate/generate/route.ts \
+  "Add: Generate API"
+
+./update.sh zertifikat-verify-api.ts \
+  apps/admin/src/app/api/verify/[id]/route.ts \
+  "Add: Verify API"
+
+./update.sh ZertifikatGeneratorModal.tsx \
+  apps/admin/src/components/ZertifikatGeneratorModal.tsx \
+  "Add: Generator Modal"
+
+./update.sh verify-page.tsx \
+  apps/admin/src/app/verify/[id]/page.tsx \
+  "Add: Verify Page"
+
+
+📋 SCHRITT 4: Vercel Environment Variables
+═══════════════════════════════════════════════════════════════
+
+1. Gehe zu: vercel.com → Dein Projekt → Settings → Environment Variables
+2. Füge hinzu:
+   - Name: CERTIFICATE_SECRET
+   - Value: <dein-secret>
+   - Environment: Production, Preview, Development
+   
+3. Füge hinzu:
+   - Name: NEXT_PUBLIC_APP_URL  
+   - Value: https://robtec-admin.vercel.app
+   - Environment: Production
+
+
+📋 SCHRITT 5: Testen
+═══════════════════════════════════════════════════════════════
+
+1. Gehe zu Schulungsdetails
+2. Klicke "🎓 Zertifikat erstellen"
+3. Wähle Teilnehmer
+4. Generiere → PDF wird heruntergeladen!
+5. Scanne QR Code → Validierung funktioniert!
+
+
+✅ FERTIG!
+═══════════════════════════════════════════════════════════════
+
+Siehe ZERTIFIKAT-INSTALL.md für Details!
+

@@ -1,0 +1,136 @@
+# Integration von Zertifikat-Generator in Schulungsdetails
+
+## In apps/admin/src/app/schulungen/[id]/page.tsx
+
+### 1. Import hinzufügen (oben):
+```typescript
+import ZertifikatGeneratorModal from '@/components/ZertifikatGeneratorModal';
+```
+
+### 2. State hinzufügen (bei den anderen States):
+```typescript
+const [showZertifikatModal, setShowZertifikatModal] = useState(false);
+```
+
+### 3. Teilnehmer-Daten mit Zertifikat-Status laden:
+
+In der `loadSchulungDetails` Funktion die Anmeldungen erweitern:
+
+```typescript
+// Anmeldungen laden MIT Zertifikat-Info
+const anmeldungenRes = await fetch(`/api/schulungen/${id}/anmeldungen-mit-zertifikat`);
+```
+
+### 4. Button-Klick Handler:
+```typescript
+function handleZertifikatClick() {
+  setShowZertifikatModal(true);
+}
+```
+
+### 5. Button im Aktionen-Block ändern:
+
+ERSETZE:
+```typescript
+<button className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left">
+  🎓 Zertifikat erstellen
+</button>
+```
+
+MIT:
+```typescript
+<button
+  onClick={handleZertifikatClick}
+  disabled={anmeldungen.length === 0}
+  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left disabled:opacity-50 disabled:cursor-not-allowed"
+>
+  🎓 Zertifikat erstellen
+</button>
+```
+
+### 6. Modal am Ende hinzufügen (vor dem schließenden </div>):
+
+```typescript
+{/* Zertifikat Modal */}
+{schulung && (
+  <ZertifikatGeneratorModal
+    isOpen={showZertifikatModal}
+    onClose={() => {
+      setShowZertifikatModal(false);
+      loadSchulungDetails(); // Reload um Zertifikat-Status zu aktualisieren
+    }}
+    schulungId={id}
+    schulungTitel={schulung.titel}
+    teilnehmer={anmeldungen.map(a => ({
+      id: a.teilnehmer.id,
+      vorname: a.teilnehmer.vorname,
+      nachname: a.teilnehmer.nachname,
+      firma: a.teilnehmer.firma,
+      hasZertifikat: a.hasZertifikat // Kommt von API
+    }))}
+  />
+)}
+```
+
+### 7. Neue API Route erstellen:
+
+Datei: `apps/admin/src/app/api/schulungen/[id]/anmeldungen-mit-zertifikat/route.ts`
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
+
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { id } = params;
+
+    const anmeldungen = await prisma.anmeldung.findMany({
+      where: { schulungId: id },
+      include: {
+        teilnehmer: true,
+        schulung: true
+      }
+    });
+
+    // Für jeden Teilnehmer prüfen ob Zertifikat existiert
+    const anmeldungenMitZertifikat = await Promise.all(
+      anmeldungen.map(async (anmeldung) => {
+        const zertifikat = await prisma.zertifikat.findFirst({
+          where: {
+            schulungId: id,
+            teilnehmerId: anmeldung.teilnehmerId
+          }
+        });
+
+        return {
+          ...anmeldung,
+          hasZertifikat: !!zertifikat
+        };
+      })
+    );
+
+    return NextResponse.json(anmeldungenMitZertifikat);
+  } catch (error) {
+    return NextResponse.json(
+      { error: 'Fehler beim Laden' },
+      { status: 500 }
+    );
+  }
+}
+```
+
+## Deployment:
+
+```bash
+./update.sh anmeldungen-mit-zertifikat-api.ts \
+  apps/admin/src/app/api/schulungen/[id]/anmeldungen-mit-zertifikat/route.ts \
+  "Add: Anmeldungen mit Zertifikat-Status API"
+
+./update.sh schulungsdetails-updated.tsx \
+  apps/admin/src/app/schulungen/[id]/page.tsx \
+  "Update: Zertifikat-Generator Integration"
+```
+
