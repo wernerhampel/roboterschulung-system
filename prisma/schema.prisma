@@ -16,8 +16,8 @@ model Schulung {
   beschreibung String?
   typ         SchulungsTyp
   hersteller  Hersteller
-  startDatum  DateTime
-  endDatum    DateTime
+  startdatum  DateTime
+  enddatum    DateTime
   dauer       Int      // Anzahl Tage
   maxTeilnehmer Int    @default(12)
   ort         String?
@@ -74,12 +74,12 @@ model Zertifikat {
   schulungId          String
   teilnehmerId        String
   
-  zertifikatNummer    String   @unique
+  zertifikatsnummer   String   @unique
   ausstellungsdatum   DateTime @default(now())
-  gueltigBis          DateTime
+  gueltigbis          DateTime
   
   template            String   // z.B. "kuka-grundlagen", "abb-praxis"
-  validierungsHash    String   @unique
+  validierungshash    String   @unique
   
   status              ZertifikatStatus @default(aktiv)
   
