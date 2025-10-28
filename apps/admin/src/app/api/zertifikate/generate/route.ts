@@ -92,24 +92,25 @@ export async function POST(request: NextRequest) {
     );
 
     // Generiere Zertifikat-Nummer
-    const zertifikatNummer = generateCertificateNumber(count + 1, ausstellungsdatum);
-
-    // Template bestimmen
-    const template = determineTemplate(schulung.hersteller, schulung.typ);
+    const zertifikatsnummer = generateCertificateNumber(count + 1, ausstellungsdatum);
 
     // Gültigkeitsdatum berechnen (3 Jahre)
     const gueltigBis = calculateExpiryDate(ausstellungsdatum);
+
+    // Erstelle Validierungs-URL
+    const baseUrl = process.env.NEXT_PUBLIC_VERIFY_URL || 'https://verify.robtec.de';
+    const validierungsUrl = `${baseUrl}/verify?id=${zertifikatsnummer}&hash=${validierungsHash}`;
 
     // Erstelle Zertifikat in DB
     const zertifikat = await prisma.zertifikat.create({
       data: {
         schulungId,
         teilnehmerId,
-        zertifikatNummer,
+        zertifikatsnummer,
         ausstellungsdatum,
         gueltigBis,
-        template,
-        validierungsHash,
+        qrCode: validierungsHash,
+        validierungsUrl,
         status: 'aktiv'
       }
     });
@@ -136,13 +137,13 @@ export async function POST(request: NextRequest) {
       success: true,
       zertifikat: {
         id: zertifikat.id,
-        zertifikatNummer: zertifikat.zertifikatNummer,
+        zertifikatsnummer: zertifikat.zertifikatsnummer,
         ausstellungsdatum: zertifikat.ausstellungsdatum,
         gueltigBis: zertifikat.gueltigBis,
-        validierungsHash: zertifikat.validierungsHash
+        validierungsHash: zertifikat.qrCode
       },
       pdf: pdfBuffer.toString('base64'),
-      filename: `Zertifikat_${zertifikat.zertifikatNummer}.pdf`
+      filename: `Zertifikat_${zertifikat.zertifikatsnummer}.pdf`
     });
 
   } catch (error) {
