@@ -1,0 +1,138 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Schulung {
+  id          String   @id @default(cuid())
+  titel       String
+  beschreibung String?
+  typ         SchulungsTyp
+  hersteller  Hersteller
+  startDatum  DateTime
+  endDatum    DateTime
+  dauer       Int      // Anzahl Tage
+  maxTeilnehmer Int    @default(12)
+  ort         String?
+  trainer     String?
+  
+  // Calendar Integration
+  calendarEventId String? @unique
+  lastSyncedAt    DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  anmeldungen Anmeldung[]
+  zertifikate Zertifikat[]
+}
+
+model Teilnehmer {
+  id          String   @id @default(cuid())
+  vorname     String
+  nachname    String
+  email       String   @unique
+  telefon     String?
+  firma       String?
+  position    String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  anmeldungen Anmeldung[]
+  zertifikate Zertifikat[]
+}
+
+model Anmeldung {
+  id            String   @id @default(cuid())
+  schulungId    String
+  teilnehmerId  String
+  
+  status        AnmeldungsStatus @default(bestaetigt)
+  bezahlt       Boolean @default(false)
+  betrag        Float?
+  bemerkungen   String?
+  
+  anmeldeDatum  DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  schulung      Schulung   @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  teilnehmer    Teilnehmer @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
+  
+  @@unique([schulungId, teilnehmerId])
+}
+
+model Zertifikat {
+  id                  String   @id @default(cuid())
+  schulungId          String
+  teilnehmerId        String
+  
+  zertifikatNummer    String   @unique
+  ausstellungsdatum   DateTime @default(now())
+  gueltigBis          DateTime
+  
+  template            String   // z.B. "kuka-grundlagen", "abb-praxis"
+  validierungsHash    String   @unique
+  
+  status              ZertifikatStatus @default(aktiv)
+  
+  pdfUrl              String?  // Optional: URL zum generierten PDF
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  
+  schulung            Schulung   @relation(fields: [schulungId], references: [id], onDelete: Cascade)
+  teilnehmer          Teilnehmer @relation(fields: [teilnehmerId], references: [id], onDelete: Cascade)
+  
+  @@unique([schulungId, teilnehmerId])
+}
+
+model SyncLog {
+  id          String   @id @default(cuid())
+  typ         String   // "calendar_import", "calendar_export", etc.
+  status      String   // "success", "error", "partial"
+  message     String?
+  details     String?  // JSON
+  
+  imported    Int      @default(0)
+  updated     Int      @default(0)
+  errors      Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+}
+
+enum SchulungsTyp {
+  grundlagen
+  praxis
+  online
+  sonstige
+}
+
+enum Hersteller {
+  kuka
+  abb
+  mitsubishi
+  universal_robots
+  sonstige
+}
+
+enum AnmeldungsStatus {
+  angefragt
+  bestaetigt
+  abgesagt
+  teilgenommen
+  nicht_erschienen
+}
+
+enum ZertifikatStatus {
+  aktiv
+  widerrufen
+  abgelaufen
+}
