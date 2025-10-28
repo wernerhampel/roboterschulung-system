@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import TeilnehmerModal, { TeilnehmerFormData } from '@/components/TeilnehmerModal';
 import SchulungEditModal, { SchulungFormData } from '@/components/SchulungEditModal';
+import ZertifikatGeneratorModal from '@/components/ZertifikatGeneratorModal';
 
 interface Schulung {
   id: string;
@@ -58,6 +59,7 @@ export default function SchulungDetailsPage() {
   // Modal states
   const [showTeilnehmerModal, setShowTeilnehmerModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showZertifikatModal, setShowZertifikatModal] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
@@ -503,7 +505,10 @@ export default function SchulungDetailsPage() {
                 >
                   👥 Teilnehmer hinzufügen
                 </button>
-                <button className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left">
+                <button 
+                  onClick={() => setShowZertifikatModal(true)}
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left"
+                >
                   🎓 Zertifikat erstellen
                 </button>
                 <button className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-left">
@@ -589,6 +594,23 @@ export default function SchulungDetailsPage() {
               raum: schulung.raum,
               trainer: schulung.trainer
             }}
+          />
+
+          <ZertifikatGeneratorModal
+            isOpen={showZertifikatModal}
+            onClose={() => {
+              setShowZertifikatModal(false);
+              loadSchulungDetails(); // Reload to update hasZertifikat status
+            }}
+            schulungId={schulung.id}
+            schulungTitel={schulung.titel}
+            teilnehmer={anmeldungen.map(a => ({
+              id: a.teilnehmer.id,
+              vorname: a.teilnehmer.vorname,
+              nachname: a.teilnehmer.nachname,
+              firma: a.teilnehmer.firma,
+              hasZertifikat: false // TODO: Add to API response
+            }))}
           />
         </>
       )}
