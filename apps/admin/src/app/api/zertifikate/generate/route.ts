@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
-import { generateCertificatePDF } from '@/lib/pdf-generator';
+import { generateCertificateWithGoogleSlides } from '@/lib/google-slides-generator';
 
 const prisma = new PrismaClient();
 
@@ -9,7 +9,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { schulungId, teilnehmerId } = body;
 
-    console.log('🎓 Generating certificate for:', { schulungId, teilnehmerId });
+    console.log('🎓 Generating certificate with Google Slides for:', { schulungId, teilnehmerId });
 
     // Validierung
     if (!schulungId || !teilnehmerId) {
@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Teilnehmer laden
+    // Teilnehmer laden  
     const teilnehmer = await prisma.teilnehmer.findUnique({
       where: { id: teilnehmerId }
     });
@@ -56,14 +56,14 @@ export async function POST(request: NextRequest) {
     if (existingCert) {
       console.log('Certificate already exists:', existingCert.zertifikatsnummer);
       
-      // Generiere PDF für existierendes Zertifikat neu
-      // WICHTIG: Prisma gibt uns gueltigBis (camelCase) zurück!
-      const pdfData = await generateCertificatePDF({
+      // Generiere PDF für existierendes Zertifikat neu mit Google Slides
+      const pdfData = await generateCertificateWithGoogleSlides({
         zertifikatNummer: existingCert.zertifikatsnummer,
         teilnehmer: {
           vorname: teilnehmer.vorname,
           nachname: teilnehmer.nachname,
-          firma: teilnehmer.firma || ''
+          firma: teilnehmer.firma || '',
+          email: teilnehmer.email
         },
         schulung: {
           titel: schulung.titel,
@@ -71,10 +71,12 @@ export async function POST(request: NextRequest) {
           typ: schulung.typ,
           startDatum: new Date(schulung.startDatum),
           endDatum: new Date(schulung.endDatum),
-          dauer: schulung.dauer
+          dauer: schulung.dauer,
+          trainer: schulung.trainer,
+          ort: schulung.ort
         },
         ausstellungsdatum: existingCert.ausstellungsdatum,
-        gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)  // camelCase!
+        gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
       });
 
       return NextResponse.json({
@@ -84,19 +86,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Generiere neue Zertifikatsnummer
+    // Generiere neue Zertifikatsnummer (wie im Google Apps Script)
+    const timestamp = new Date().getTime();
     const year = new Date().getFullYear();
-    const count = await prisma.zertifikat.count({
-      where: {
-        zertifikatsnummer: {
-          startsWith: `ROBT-${year}-`
-        }
-      }
-    });
+    const zertifikatNummer = `CERT-${year}-${timestamp.toString().slice(-6)}`;
     
-    const zertifikatNummer = `ROBT-${year}-${String(count + 1).padStart(5, '0')}`;
-    
-    // Generiere Validierungs-Hash (nach aktuellem Schema: qrCode)
+    // Generiere Validierungs-Hash
     const crypto = require('crypto');
     const validierungsHash = crypto
       .createHash('sha256')
@@ -112,32 +107,30 @@ export async function POST(request: NextRequest) {
     gueltigBis.setFullYear(gueltigBis.getFullYear() + 3);
 
     // Zertifikat in DB erstellen
-    // WICHTIG: Der Error-Output zeigt uns die tatsächlichen Felder:
-    // - qrCode (nicht validierungshash)
-    // - validierungsUrl
-    // - gueltigBis (wird intern zu camelCase)
     const zertifikat = await prisma.zertifikat.create({
       data: {
         schulungId,
         teilnehmerId,
         zertifikatsnummer: zertifikatNummer,
-        qrCode: validierungsHash,             // Das Schema hat jetzt qrCode!
-        validierungsUrl: validierungsUrl,     // Und validierungsUrl!
-        gueltigBis: gueltigBis,               // camelCase für Prisma
+        qrCode: validierungsHash,
+        validierungsUrl: validierungsUrl,
+        gueltigBis: gueltigBis,
         status: 'aktiv',
         ausstellungsdatum: new Date()
       }
     });
 
-    console.log('✅ Certificate created:', zertifikat.zertifikatsnummer);
+    console.log('✅ Certificate created in DB:', zertifikat.zertifikatsnummer);
 
-    // PDF generieren
-    const pdfData = await generateCertificatePDF({
+    // PDF mit Google Slides generieren
+    console.log('📑 Generating PDF with Google Slides...');
+    const pdfData = await generateCertificateWithGoogleSlides({
       zertifikatNummer,
       teilnehmer: {
         vorname: teilnehmer.vorname,
         nachname: teilnehmer.nachname,
-        firma: teilnehmer.firma || ''
+        firma: teilnehmer.firma || '',
+        email: teilnehmer.email
       },
       schulung: {
         titel: schulung.titel,
@@ -145,18 +138,21 @@ export async function POST(request: NextRequest) {
         typ: schulung.typ,
         startDatum: new Date(schulung.startDatum),
         endDatum: new Date(schulung.endDatum),
-        dauer: schulung.dauer
+        dauer: schulung.dauer,
+        trainer: schulung.trainer,
+        ort: schulung.ort
       },
       ausstellungsdatum: new Date(),
       gueltigBis
     });
 
-    console.log('📄 PDF generated successfully');
+    console.log('✅ PDF generated successfully with Google Slides');
 
     return NextResponse.json({
       success: true,
       zertifikat,
-      pdf: pdfData.toString('base64')
+      pdf: pdfData.toString('base64'),
+      message: 'Zertifikat erfolgreich mit Google Slides erstellt'
     });
 
   } catch (error) {
