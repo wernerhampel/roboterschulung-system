@@ -92,7 +92,9 @@ export async function GET(
     }
 
     // Prüfe Gültigkeit
-    const isStillValid = isCertificateValid(zertifikat.gueltigBis);
+    const isStillValid = zertifikat.gueltigBis 
+      ? isCertificateValid(zertifikat.gueltigBis)
+      : true; // Wenn kein Ablaufdatum, dann gilt es als gültig
 
     // GDPR-konform: Nur notwendige Infos zurückgeben
     return NextResponse.json({
