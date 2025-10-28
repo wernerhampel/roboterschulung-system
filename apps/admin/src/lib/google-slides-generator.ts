@@ -52,8 +52,8 @@ export async function generateCertificateWithGoogleSlides(data: CertificateData)
     });
 
     const authClient = await auth.getClient();
-    const drive = google.drive({ version: 'v3', auth: authClient });
-    const slides = google.slides({ version: 'v1', auth: authClient });
+    const drive = google.drive({ version: 'v3', auth: authClient as any });
+    const slides = google.slides({ version: 'v1', auth: authClient as any });
 
     // Template auswählen basierend auf Schulungstyp
     let templateId = CERTIFICATE_TEMPLATES[data.schulung.typ] || CERTIFICATE_TEMPLATES['Grundlagen'];
