@@ -9,6 +9,8 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { schulungId, teilnehmerId } = body;
 
+    console.log('🎓 Generating certificate for:', { schulungId, teilnehmerId });
+
     // Validierung
     if (!schulungId || !teilnehmerId) {
       return NextResponse.json(
@@ -52,43 +54,77 @@ export async function POST(request: NextRequest) {
     });
 
     if (existingCert) {
-      return NextResponse.json(
-        { error: 'Zertifikat existiert bereits für diesen Teilnehmer' },
-        { status: 409 }
-      );
+      console.log('Certificate already exists:', existingCert.zertifikatsnummer);
+      
+      // Generiere PDF für existierendes Zertifikat neu
+      const pdfData = await generateCertificatePDF({
+        zertifikatNummer: existingCert.zertifikatsnummer,
+        teilnehmer: {
+          vorname: teilnehmer.vorname,
+          nachname: teilnehmer.nachname,
+          firma: teilnehmer.firma || ''
+        },
+        schulung: {
+          titel: schulung.titel,
+          hersteller: schulung.hersteller,
+          typ: schulung.typ,
+          startDatum: new Date(schulung.startDatum),
+          endDatum: new Date(schulung.endDatum),
+          dauer: schulung.dauer
+        },
+        ausstellungsdatum: existingCert.ausstellungsdatum,
+        gueltigBis: existingCert.gueltigBis || new Date(Date.now() + 3 * 365 * 24 * 60 * 60 * 1000)
+      });
+
+      return NextResponse.json({
+        success: true,
+        zertifikat: existingCert,
+        pdf: pdfData.toString('base64')
+      });
     }
 
-    // Zertifikat-Nummer generieren (Format: ROBT-YYYY-XXXXX)
+    // Generiere neue Zertifikatsnummer
     const year = new Date().getFullYear();
-    const randomNum = Math.floor(10000 + Math.random() * 90000);
-    const zertifikatNummer = `ROBT-${year}-${randomNum}`;
+    const count = await prisma.zertifikat.count({
+      where: {
+        zertifikatsnummer: {
+          startsWith: `ROBT-${year}-`
+        }
+      }
+    });
+    
+    const zertifikatNummer = `ROBT-${year}-${String(count + 1).padStart(5, '0')}`;
+    
+    // Generiere Validierungs-Hash (qrCode)
+    const crypto = require('crypto');
+    const validierungsHash = crypto
+      .createHash('sha256')
+      .update(`${zertifikatNummer}-${teilnehmerId}-${schulungId}-${Date.now()}`)
+      .digest('hex');
 
-    // Validierungs-Hash generieren (für spätere Nutzung)
-    const validierungsHash = await generateValidationHash(
-      zertifikatNummer,
-      teilnehmerId,
-      schulungId
-    );
+    // Validierungs-URL
+    const baseUrl = process.env.NEXT_PUBLIC_VERIFY_URL || 'https://robtec-verify.vercel.app';
+    const validierungsUrl = `${baseUrl}/verify/${validierungsHash}`;
 
-    // Gültigkeitsdatum (z.B. 3 Jahre ab Ausstellungsdatum)
+    // Gültigkeitsdatum (3 Jahre)
     const gueltigBis = new Date();
     gueltigBis.setFullYear(gueltigBis.getFullYear() + 3);
 
-    // Template basierend auf Schulungstyp
-    const template = `${schulung.hersteller.toLowerCase()}-${schulung.typ.toLowerCase()}`;
-
-    // Zertifikat in DB erstellen
+    // Zertifikat in DB erstellen - mit korrekten Feldnamen
     const zertifikat = await prisma.zertifikat.create({
       data: {
         schulungId,
         teilnehmerId,
         zertifikatsnummer: zertifikatNummer,
-        validierungshash: validierungsHash,
-        gueltigbis: gueltigBis,
-        template,
-        status: 'aktiv'
+        qrCode: validierungsHash,  // Korrektes Feld!
+        validierungsUrl: validierungsUrl,
+        gueltigBis: gueltigBis,
+        status: 'aktiv',
+        ausstellungsdatum: new Date()
       }
     });
+
+    console.log('✅ Certificate created:', zertifikat.zertifikatsnummer);
 
     // PDF generieren
     const pdfData = await generateCertificatePDF({
@@ -102,45 +138,29 @@ export async function POST(request: NextRequest) {
         titel: schulung.titel,
         hersteller: schulung.hersteller,
         typ: schulung.typ,
-        startDatum: schulung.startdatum,
-        endDatum: schulung.enddatum,
+        startDatum: new Date(schulung.startDatum),
+        endDatum: new Date(schulung.endDatum),
         dauer: schulung.dauer
       },
       ausstellungsdatum: new Date(),
       gueltigBis
     });
 
-    // Filename
-    const filename = `Zertifikat_${teilnehmer.nachname}_${teilnehmer.vorname}_${zertifikatNummer}.pdf`;
+    console.log('📄 PDF generated successfully');
 
     return NextResponse.json({
       success: true,
-      zertifikat: {
-        id: zertifikat.id,
-        nummer: zertifikatNummer,
-        ausstellungsdatum: zertifikat.ausstellungsdatum,
-        gueltigBis: zertifikat.gueltigbis
-      },
-      pdf: pdfData.toString('base64'),
-      filename
+      zertifikat,
+      pdf: pdfData.toString('base64')
     });
 
   } catch (error) {
-    console.error('Fehler bei Zertifikat-Generierung:', error);
+    console.error('❌ Error generating certificate:', error);
     return NextResponse.json(
-      { error: 'Interner Serverfehler bei der Zertifikat-Generierung' },
+      { error: 'Fehler beim Erstellen des Zertifikats: ' + (error as Error).message },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
-}
-
-// Helper: Validierungs-Hash generieren
-async function generateValidationHash(
-  zertifikatNummer: string,
-  teilnehmerId: string,
-  schulungId: string
-): Promise<string> {
-  const crypto = require('crypto');
-  const data = `${zertifikatNummer}-${teilnehmerId}-${schulungId}-${Date.now()}`;
-  return crypto.createHash('sha256').update(data).digest('hex');
 }
