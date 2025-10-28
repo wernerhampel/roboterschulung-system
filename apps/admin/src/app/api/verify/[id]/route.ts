@@ -26,7 +26,14 @@ export async function GET(
     // Lade Zertifikat
     const zertifikat = await prisma.zertifikat.findUnique({
       where: { id },
-      include: {
+      select: {
+        id: true,
+        zertifikatNummer: true,
+        schulungId: true,
+        teilnehmerId: true,
+        ausstellungsdatum: true,
+        gueltigBis: true,
+        status: true,  // ✅ STATUS FIELD EXPLIZIT HINZUGEFÜGT!
         schulung: {
           select: {
             titel: true,
