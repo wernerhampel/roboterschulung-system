@@ -1,22 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
-    console.log(`[API] GET /api/schulungen/${id}`);
-
     const schulung = await prisma.schulung.findUnique({
-      where: { id },
+      where: { id: params.id },
       include: {
+        anmeldungen: {
+          include: {
+            teilnehmer: true
+          }
+        },
+        zertifikate: true,
+        rechnungen: true,
+        pruefungen: true,
         _count: {
           select: {
             anmeldungen: true,
-            termine: true,
             zertifikate: true
           }
         }
@@ -25,38 +30,32 @@ export async function GET(
 
     if (!schulung) {
       return NextResponse.json(
-        { error: 'Schulung nicht gefunden' },
+        { error: 'Schulung not found' },
         { status: 404 }
       );
     }
 
     return NextResponse.json(schulung);
-
   } catch (error) {
-    console.error('[API] Fehler beim Laden der Schulung:', error);
-    
+    console.error('Error fetching schulung:', error);
     return NextResponse.json(
-      { 
-        error: 'Fehler beim Laden der Schulung',
-        details: error instanceof Error ? error.message : 'Unbekannter Fehler'
-      },
+      { error: 'Failed to fetch schulung' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
-export async function PATCH(
+export async function PUT(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
     const body = await request.json();
 
-    console.log(`[API] PATCH /api/schulungen/${id}`, body);
-
     const schulung = await prisma.schulung.update({
-      where: { id },
+      where: { id: params.id },
       data: {
         titel: body.titel,
         beschreibung: body.beschreibung,
@@ -70,29 +69,33 @@ export async function PATCH(
         status: body.status,
         ort: body.ort,
         raum: body.raum,
-        trainer: body.trainer
+        trainer: body.trainer,
+        customContent: body.customContent
       },
       include: {
+        anmeldungen: {
+          include: {
+            teilnehmer: true
+          }
+        },
         _count: {
           select: {
-            anmeldungen: true
+            anmeldungen: true,
+            zertifikate: true
           }
         }
       }
     });
 
     return NextResponse.json(schulung);
-
   } catch (error) {
-    console.error('[API] Fehler beim Aktualisieren:', error);
-    
+    console.error('Error updating schulung:', error);
     return NextResponse.json(
-      { 
-        error: 'Fehler beim Aktualisieren',
-        details: error instanceof Error ? error.message : 'Unbekannter Fehler'
-      },
+      { error: 'Failed to update schulung' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
@@ -101,25 +104,18 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
-    console.log(`[API] DELETE /api/schulungen/${id}`);
-
     await prisma.schulung.delete({
-      where: { id }
+      where: { id: params.id }
     });
 
-    return NextResponse.json({ success: true, message: 'Schulung gelöscht' });
-
+    return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[API] Fehler beim Löschen:', error);
-    
+    console.error('Error deleting schulung:', error);
     return NextResponse.json(
-      { 
-        error: 'Fehler beim Löschen',
-        details: error instanceof Error ? error.message : 'Unbekannter Fehler'
-      },
+      { error: 'Failed to delete schulung' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }
