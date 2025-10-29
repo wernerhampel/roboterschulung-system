@@ -28,12 +28,16 @@ export function formatDateTime(date: Date | string): string {
 
 /**
  * Formatiert einen Geldbetrag in Euro
+ * Unterstützt number und Prisma Decimal
  */
-export function formatCurrency(amount: number): string {
+export function formatCurrency(amount: number | any): string {
+  // Konvertiere Prisma Decimal zu number
+  const numAmount = typeof amount === 'number' ? amount : Number(amount);
+  
   return new Intl.NumberFormat('de-DE', {
     style: 'currency',
     currency: 'EUR'
-  }).format(amount);
+  }).format(numAmount);
 }
 
 /**
@@ -235,9 +239,11 @@ export function truncate(text: string, maxLength: number): string {
 
 /**
  * Berechnet die Provision für eine Vermittlung
+ * Unterstützt number und Prisma Decimal
  */
-export function calculateProvision(betrag: number, provisionRate: number): number {
-  return Math.round((betrag * provisionRate) * 100) / 100;
+export function calculateProvision(betrag: number | any, provisionRate: number): number {
+  const numBetrag = typeof betrag === 'number' ? betrag : Number(betrag);
+  return Math.round((numBetrag * provisionRate) * 100) / 100;
 }
 
 /**

@@ -352,7 +352,7 @@ export default async function SchulungDetailPage({ params }: PageProps) {
             </div>
             <div className="text-right">
               <div className="text-3xl font-bold text-blue-600">
-                {formatCurrency(schulung.preis)}
+                {formatCurrency(Number(schulung.preis))}
               </div>
               <div className="text-sm text-gray-500 mt-1">
                 pro Teilnehmer
