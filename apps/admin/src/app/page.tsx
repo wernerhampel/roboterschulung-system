@@ -210,9 +210,9 @@ export default async function HomePage() {
                       <td>{schulung.maxTeilnehmer}</td>
                       <td>
                         <span className={`badge ${
-                          schulung.status === 'bestaetigt' ? 'badge-success' :
-                          schulung.status === 'bestaetigt' ? 'badge-info' :
-                          schulung.status === 'abgeschlossen' ? 'badge-warning' :
+                          schulung.status.toLowerCase() === 'bestaetigt' ? 'badge-success' :
+                          schulung.status.toLowerCase() === 'bestaetigt' ? 'badge-info' :
+                          schulung.status.toLowerCase() === 'abgeschlossen' ? 'badge-warning' :
                           'badge-danger'
                         }`}>
                           {getStatusLabel(schulung.status)}
