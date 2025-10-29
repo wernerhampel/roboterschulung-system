@@ -38,6 +38,7 @@ async function getSchulungDetails(id: string) {
 
 // Lernziele basierend auf Schulungstyp
 function getLernziele(typ: string, hersteller: string) {
+  const typLower = typ.toLowerCase();
   const base = {
     grundlagen: [
       'Verständnis der Roboter-Grundlagen und Sicherheitsvorschriften',
@@ -68,12 +69,14 @@ function getLernziele(typ: string, hersteller: string) {
     ]
   };
 
-  return base[typ as keyof typeof base] || base.grundlagen;
+  return base[typLower as keyof typeof base] || base.grundlagen;
 }
 
 // Agenda basierend auf Schulungstyp
 function getAgenda(typ: string, dauer: number) {
-  if (typ === 'grundlagen') {
+  const typLower = typ.toLowerCase();
+  
+  if (typLower === 'grundlagen') {
     return [
       {
         tag: 1,
@@ -144,7 +147,7 @@ function getAgenda(typ: string, dauer: number) {
     ];
   }
 
-  if (typ === 'fortgeschritten') {
+  if (typLower === 'fortgeschritten') {
     return [
       {
         tag: 1,
@@ -189,7 +192,7 @@ function getAgenda(typ: string, dauer: number) {
     ];
   }
 
-  if (typ === 'wartung') {
+  if (typLower === 'wartung') {
     return [
       {
         tag: 1,
@@ -485,16 +488,16 @@ export default async function SchulungDetailPage({ params }: PageProps) {
                 📋 Voraussetzungen
               </h2>
               <div className="text-gray-600">
-                {schulung.typ === 'grundlagen' && (
+                {schulung.typ.toLowerCase() === 'grundlagen' && (
                   <p>Keine Vorkenntnisse erforderlich. Technisches Verständnis ist von Vorteil.</p>
                 )}
-                {schulung.typ === 'fortgeschritten' && (
+                {schulung.typ.toLowerCase() === 'fortgeschritten' && (
                   <p>Abgeschlossene Grundlagenschulung oder gleichwertige Kenntnisse erforderlich.</p>
                 )}
-                {schulung.typ === 'wartung' && (
+                {schulung.typ.toLowerCase() === 'wartung' && (
                   <p>Grundkenntnisse in Robotik und Elektrotechnik erforderlich.</p>
                 )}
-                {schulung.typ === 'individualschulung' && (
+                {schulung.typ.toLowerCase() === 'individualschulung' && (
                   <p>Werden individuell mit Ihnen abgestimmt.</p>
                 )}
               </div>
@@ -506,7 +509,7 @@ export default async function SchulungDetailPage({ params }: PageProps) {
                 👥 Zielgruppe
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {schulung.typ === 'grundlagen' && (
+                {schulung.typ.toLowerCase() === 'grundlagen' && (
                   <>
                     <div className="flex items-center text-gray-600">
                       <span className="mr-2">•</span>
@@ -526,7 +529,7 @@ export default async function SchulungDetailPage({ params }: PageProps) {
                     </div>
                   </>
                 )}
-                {schulung.typ === 'fortgeschritten' && (
+                {schulung.typ.toLowerCase() === 'fortgeschritten' && (
                   <>
                     <div className="flex items-center text-gray-600">
                       <span className="mr-2">•</span>
@@ -546,7 +549,7 @@ export default async function SchulungDetailPage({ params }: PageProps) {
                     </div>
                   </>
                 )}
-                {schulung.typ === 'wartung' && (
+                {schulung.typ.toLowerCase() === 'wartung' && (
                   <>
                     <div className="flex items-center text-gray-600">
                       <span className="mr-2">•</span>
