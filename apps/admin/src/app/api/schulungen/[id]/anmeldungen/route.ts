@@ -1,18 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
-    console.log(`[API] GET /api/schulungen/${id}/anmeldungen`);
-
     const anmeldungen = await prisma.anmeldung.findMany({
       where: {
-        schulungId: id
+        schulungId: params.id
       },
       include: {
         teilnehmer: {
@@ -22,30 +20,24 @@ export async function GET(
             nachname: true,
             email: true,
             telefon: true,
-            firma: true,
-            position: true
+            firma: true
           }
         }
       },
       orderBy: {
-        anmeldedatum: 'desc'
+        anmeldedatum: 'asc'
       }
     });
 
-    console.log(`[API] ${anmeldungen.length} Anmeldungen gefunden`);
-
     return NextResponse.json(anmeldungen);
-
   } catch (error) {
-    console.error('[API] Fehler beim Laden der Anmeldungen:', error);
-    
+    console.error('Error fetching anmeldungen:', error);
     return NextResponse.json(
-      { 
-        error: 'Fehler beim Laden der Anmeldungen',
-        details: error instanceof Error ? error.message : 'Unbekannter Fehler'
-      },
+      { error: 'Failed to fetch anmeldungen' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
   }
 }
 
@@ -54,14 +46,36 @@ export async function POST(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
     const body = await request.json();
 
-    console.log(`[API] POST /api/schulungen/${id}/anmeldungen`, body);
+    // Validierung
+    if (!body.teilnehmerId) {
+      return NextResponse.json(
+        { error: 'teilnehmerId ist erforderlich' },
+        { status: 400 }
+      );
+    }
 
-    // Prüfe ob Schulung existiert und Plätze frei sind
+    // Prüfe ob Anmeldung bereits existiert
+    const existing = await prisma.anmeldung.findUnique({
+      where: {
+        schulungId_teilnehmerId: {
+          schulungId: params.id,
+          teilnehmerId: body.teilnehmerId
+        }
+      }
+    });
+
+    if (existing) {
+      return NextResponse.json(
+        { error: 'Teilnehmer ist bereits angemeldet' },
+        { status: 400 }
+      );
+    }
+
+    // Prüfe freie Plätze
     const schulung = await prisma.schulung.findUnique({
-      where: { id },
+      where: { id: params.id },
       include: {
         _count: {
           select: { anmeldungen: true }
@@ -83,55 +97,69 @@ export async function POST(
       );
     }
 
-    // Prüfe ob Teilnehmer schon existiert oder erstelle neuen
-    let teilnehmer = await prisma.teilnehmer.findUnique({
-      where: { email: body.teilnehmer.email }
-    });
-
-    if (!teilnehmer) {
-      teilnehmer = await prisma.teilnehmer.create({
-        data: {
-          vorname: body.teilnehmer.vorname,
-          nachname: body.teilnehmer.nachname,
-          email: body.teilnehmer.email,
-          telefon: body.teilnehmer.telefon,
-          firma: body.teilnehmer.firma,
-          position: body.teilnehmer.position,
-          strasse: body.teilnehmer.strasse,
-          plz: body.teilnehmer.plz,
-          ort: body.teilnehmer.ort,
-          land: body.teilnehmer.land || 'DE'
-        }
-      });
-    }
-
     // Erstelle Anmeldung
     const anmeldung = await prisma.anmeldung.create({
       data: {
-        schulungId: id,
-        teilnehmerId: teilnehmer.id,
-        status: body.status || 'angemeldet',
+        schulungId: params.id,
+        teilnehmerId: body.teilnehmerId,
+        status: body.status || 'reserviert',
         bezahlstatus: body.bezahlstatus || 'offen',
-        bemerkungen: body.bemerkungen
+        vermittler: body.vermittler,
+        provisionRate: body.provisionRate
       },
       include: {
-        teilnehmer: true
+        teilnehmer: {
+          select: {
+            id: true,
+            vorname: true,
+            nachname: true,
+            email: true,
+            telefon: true,
+            firma: true
+          }
+        }
       }
     });
 
-    console.log(`[API] Anmeldung erstellt: ${anmeldung.id}`);
-
     return NextResponse.json(anmeldung, { status: 201 });
-
   } catch (error) {
-    console.error('[API] Fehler beim Erstellen der Anmeldung:', error);
-    
+    console.error('Error creating anmeldung:', error);
     return NextResponse.json(
-      { 
-        error: 'Fehler beim Erstellen der Anmeldung',
-        details: error instanceof Error ? error.message : 'Unbekannter Fehler'
-      },
+      { error: 'Failed to create anmeldung' },
       { status: 500 }
     );
+  } finally {
+    await prisma.$disconnect();
+  }
+}
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const anmeldungId = searchParams.get('anmeldungId');
+
+    if (!anmeldungId) {
+      return NextResponse.json(
+        { error: 'anmeldungId ist erforderlich' },
+        { status: 400 }
+      );
+    }
+
+    await prisma.anmeldung.delete({
+      where: { id: anmeldungId }
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting anmeldung:', error);
+    return NextResponse.json(
+      { error: 'Failed to delete anmeldung' },
+      { status: 500 }
+    );
+  } finally {
+    await prisma.$disconnect();
   }
 }
