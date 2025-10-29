@@ -211,7 +211,7 @@ export default async function HomePage() {
                       <td>
                         <span className={`badge ${
                           schulung.status === 'bestaetigt' ? 'badge-success' :
-                          schulung.status === 'geplant' ? 'badge-info' :
+                          schulung.status === 'bestaetigt' ? 'badge-info' :
                           schulung.status === 'abgeschlossen' ? 'badge-warning' :
                           'badge-danger'
                         }`}>
