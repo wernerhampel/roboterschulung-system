@@ -335,7 +335,11 @@ export default async function SchulungDetailPage({ params }: PageProps) {
               </h1>
               <div className="flex items-center gap-4 mt-3">
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(schulung.status)}`}>
-                  {schulung.status.charAt(0).toUpperCase() + schulung.status.slice(1)}
+                  {schulung.status === 'bestaetigt' ? 'Bestätigt' :
+                   schulung.status === 'laufend' ? 'Laufend' :
+                   schulung.status === 'abgeschlossen' ? 'Abgeschlossen' :
+                   schulung.status === 'abgesagt' ? 'Abgesagt' :
+                   schulung.status}
                 </span>
                 <span className="text-gray-600">
                   {getSchulungsTypLabel(schulung.typ)}
