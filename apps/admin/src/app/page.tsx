@@ -1,231 +1,304 @@
 import Link from 'next/link';
-import { prisma } from '@/lib/prisma';
 
-export const dynamic = 'force-dynamic';
+interface Schulung {
+  id: string;
+  titel: string;
+  beschreibung: string | null;
+  typ: string;
+  hersteller: string;
+  startDatum: string;
+  endDatum: string;
+  dauer: number;
+  maxTeilnehmer: number;
+  preis: number;
+  status: string;
+  ort: string | null;
+  raum: string | null;
+  trainer: string | null;
+  _count: {
+    anmeldungen: number;
+  };
+}
 
-export default async function HomePage() {
-  const schulungen = await prisma.schulung.findMany({
-    orderBy: { createdAt: 'desc' },
-    take: 5
-  });
+async function getSchulungen(): Promise<Schulung[]> {
+  try {
+    const res = await fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/schulungen`, {
+      cache: 'no-store',
+    });
+    
+    if (!res.ok) {
+      throw new Error('Failed to fetch schulungen');
+    }
+    
+    return res.json();
+  } catch (error) {
+    console.error('Error fetching schulungen:', error);
+    return [];
+  }
+}
 
-  const schulungenCount = await prisma.schulung.count();
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date);
+}
+
+function formatCurrency(amount: number): string {
+  return new Intl.NumberFormat('de-DE', {
+    style: 'currency',
+    currency: 'EUR',
+  }).format(amount);
+}
+
+export default async function DashboardPage() {
+  const schulungen = await getSchulungen();
+  
+  // Statistiken berechnen
+  const stats = {
+    gesamt: schulungen.length,
+    bestaetigt: schulungen.filter(s => s.status.toLowerCase() === 'bestaetigt').length,
+    laufend: schulungen.filter(s => s.status.toLowerCase() === 'laufend').length,
+    abgeschlossen: schulungen.filter(s => s.status.toLowerCase() === 'abgeschlossen').length,
+  };
+  
+  const gesamtTeilnehmer = schulungen.reduce((sum, s) => sum + s._count.anmeldungen, 0);
+  const gesamtUmsatz = schulungen
+    .filter(s => s.status.toLowerCase() !== 'abgesagt')
+    .reduce((sum, s) => sum + (s.preis * s._count.anmeldungen), 0);
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <h2 className="text-3xl font-bold text-gray-900">Dashboard</h2>
-        <Link href="/schulungen/neu" className="btn btn-primary">
-          + Neue Schulung
-        </Link>
-      </div>
-
-      {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">Schulungen</h3>
-          <p className="text-4xl font-bold text-blue-600">{schulungenCount}</p>
-          <p className="text-sm text-gray-500 mt-2">Gesamt im System</p>
+    <div className="min-h-screen bg-base-200">
+      {/* Header */}
+      <div className="navbar bg-primary text-primary-content">
+        <div className="flex-1">
+          <a className="btn btn-ghost normal-case text-xl">
+            ROBTEC Schulungssystem
+          </a>
         </div>
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">Nächste Termine</h3>
-          <p className="text-4xl font-bold text-green-600">-</p>
-          <p className="text-sm text-gray-500 mt-2">In den nächsten 30 Tagen</p>
-        </div>
-        <div className="card">
-          <h3 className="text-lg font-semibold text-gray-700 mb-2">Zertifikate</h3>
-          <p className="text-4xl font-bold text-purple-600">-</p>
-          <p className="text-sm text-gray-500 mt-2">Ausgestellt diesen Monat</p>
+        <div className="flex-none gap-2">
+          <div className="dropdown dropdown-end">
+            <label tabIndex={0} className="btn btn-ghost btn-circle avatar">
+              <div className="w-10 rounded-full bg-primary-focus flex items-center justify-center">
+                <span className="text-xl">👤</span>
+              </div>
+            </label>
+            <ul tabIndex={0} className="mt-3 z-[1] p-2 shadow menu menu-sm dropdown-content bg-base-100 text-base-content rounded-box w-52">
+              <li><a>Profil</a></li>
+              <li><a>Einstellungen</a></li>
+              <li><a>Abmelden</a></li>
+            </ul>
+          </div>
         </div>
       </div>
 
-      {/* Navigation Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Link href="/schulungen" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-blue-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+      <div className="container mx-auto p-4">
+        {/* Navigation Tabs */}
+        <div className="tabs tabs-boxed mb-6">
+          <a className="tab tab-active">Dashboard</a>
+          <Link href="/schulungen" className="tab">Schulungen</Link>
+          <Link href="/templates" className="tab">Templates</Link>
+          <a className="tab">Teilnehmer</a>
+          <a className="tab">Zertifikate</a>
+          <a className="tab">Rechnungen</a>
+        </div>
+
+        {/* Statistik-Karten */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <div className="stat bg-base-100 rounded-box shadow">
+            <div className="stat-figure text-primary">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="inline-block w-8 h-8 stroke-current">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path>
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Schulungen</h3>
-              <p className="text-sm text-gray-600 mt-1">Schulungskatalog verwalten</p>
+            <div className="stat-title">Gesamt Schulungen</div>
+            <div className="stat-value text-primary">{stats.gesamt}</div>
+            <div className="stat-desc">
+              Bestätigt: {stats.bestaetigt} | Laufend: {stats.laufend}
             </div>
           </div>
-        </Link>
 
-        <Link href="/termine" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-green-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          <div className="stat bg-base-100 rounded-box shadow">
+            <div className="stat-figure text-secondary">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="inline-block w-8 h-8 stroke-current">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"></path>
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Termine</h3>
-              <p className="text-sm text-gray-600 mt-1">Termine planen & verwalten</p>
-            </div>
+            <div className="stat-title">Teilnehmer</div>
+            <div className="stat-value text-secondary">{gesamtTeilnehmer}</div>
+            <div className="stat-desc">Gesamt angemeldet</div>
           </div>
-        </Link>
 
-        <Link href="/teilnehmer" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-purple-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+          <div className="stat bg-base-100 rounded-box shadow">
+            <div className="stat-figure text-success">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="inline-block w-8 h-8 stroke-current">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z"></path>
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Teilnehmer</h3>
-              <p className="text-sm text-gray-600 mt-1">Teilnehmerverwaltung</p>
-            </div>
+            <div className="stat-title">Abgeschlossen</div>
+            <div className="stat-value text-success">{stats.abgeschlossen}</div>
+            <div className="stat-desc">Erfolgreich durchgeführt</div>
           </div>
-        </Link>
 
-        <Link href="/anmeldungen" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-yellow-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+          <div className="stat bg-base-100 rounded-box shadow">
+            <div className="stat-figure text-accent">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" className="inline-block w-8 h-8 stroke-current">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
               </svg>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Anmeldungen</h3>
-              <p className="text-sm text-gray-600 mt-1">Anmeldungen verwalten</p>
-            </div>
+            <div className="stat-title">Umsatz</div>
+            <div className="stat-value text-accent">{formatCurrency(gesamtUmsatz)}</div>
+            <div className="stat-desc">Gesamt generiert</div>
           </div>
-        </Link>
+        </div>
 
-        <Link href="/zertifikate" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-red-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
-              </svg>
+        {/* Aktuelle Schulungen */}
+        <div className="card bg-base-100 shadow-xl mb-6">
+          <div className="card-body">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="card-title text-2xl">Aktuelle Schulungen</h2>
+              <Link href="/schulungen/neu" className="btn btn-primary">
+                + Neue Schulung
+              </Link>
             </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Zertifikate</h3>
-              <p className="text-sm text-gray-600 mt-1">Zertifikate erstellen & verwalten</p>
-            </div>
-          </div>
-        </Link>
 
-        <Link href="/berichte" className="card hover:shadow-lg transition-shadow">
-          <div className="flex items-start space-x-4">
-            <div className="bg-indigo-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Berichte</h3>
-              <p className="text-sm text-gray-600 mt-1">Statistiken & Auswertungen</p>
-            </div>
-          </div>
-        </Link>
-
-        <Link href="/sync" className="card hover:shadow-lg transition-shadow border-2 border-blue-500">
-          <div className="flex items-start space-x-4">
-            <div className="bg-blue-100 p-3 rounded-lg">
-              <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-            </div>
-            <div>
-              <h3 className="text-lg font-semibold text-gray-900">Calendar Sync</h3>
-              <p className="text-sm text-gray-600 mt-1">Google Calendar synchronisieren</p>
-            </div>
-          </div>
-        </Link>
-      </div>
-
-      {/* Recent Schulungen */}
-      <div className="card">
-        <h3 className="text-xl font-semibold text-gray-900 mb-4">Letzte Schulungen</h3>
-        {schulungen.length === 0 ? (
-          <div className="text-center py-12">
-            <p className="text-gray-500">Noch keine Schulungen vorhanden.</p>
-            <Link href="/schulungen/neu" className="btn btn-primary mt-4 inline-block">
-              Erste Schulung erstellen
-            </Link>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Titel</th>
-                  <th>Typ</th>
-                  <th>Hersteller</th>
-                  <th>Dauer</th>
-                  <th>Max. Teilnehmer</th>
-                  <th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {schulungen.map((schulung) => {
-                  const getTypLabel = (typ: string) => {
-                    const labels: Record<string, string> = {
-                      grundlagen: 'Grundlagen',
-                      praxis: 'Praxis',
-                      online: 'Online',
-                      sonstige: 'Sonstige'
-                    };
-                    return labels[typ] || typ;
-                  };
-
-                  const getHerstellerLabel = (hersteller: string) => {
-                    const labels: Record<string, string> = {
-                      kuka: 'KUKA',
-                      abb: 'ABB',
-                      mitsubishi: 'Mitsubishi',
-                      universal_robots: 'Universal Robots',
-                      sonstige: 'Sonstige'
-                    };
-                    return labels[hersteller] || hersteller;
-                  };
-
-                  const getStatusLabel = (status: string) => {
-                    const labels: Record<string, string> = {
-                      geplant: 'Geplant',
-                      bestaetigt: 'Bestätigt',
-                      laufend: 'Laufend',
-                      abgeschlossen: 'Abgeschlossen',
-                      abgesagt: 'Abgesagt'
-                    };
-                    return labels[status] || status;
-                  };
-
-                  return (
-                    <tr key={schulung.id}>
-                      <td>
-                        <Link href={`/schulungen/${schulung.id}`} className="text-blue-600 hover:underline font-medium">
-                          {schulung.titel}
-                        </Link>
-                      </td>
-                      <td>{getTypLabel(schulung.typ)}</td>
-                      <td>{getHerstellerLabel(schulung.hersteller)}</td>
-                      <td>{schulung.dauer} Tage</td>
-                      <td>{schulung.maxTeilnehmer}</td>
-                      <td>
-                        <span className={`badge ${
-                          schulung.status.toLowerCase() === 'bestaetigt' ? 'badge-success' :
-                          schulung.status.toLowerCase() === 'bestaetigt' ? 'badge-info' :
-                          schulung.status.toLowerCase() === 'abgeschlossen' ? 'badge-warning' :
-                          'badge-danger'
-                        }`}>
-                          {getStatusLabel(schulung.status)}
-                        </span>
-                      </td>
+            {schulungen.length === 0 ? (
+              <div className="text-center py-8">
+                <p className="text-base-content/60">Keine Schulungen vorhanden</p>
+                <Link href="/schulungen/neu" className="btn btn-primary mt-4">
+                  Erste Schulung erstellen
+                </Link>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="table table-zebra">
+                  <thead>
+                    <tr>
+                      <th>Titel</th>
+                      <th>Typ</th>
+                      <th>Hersteller</th>
+                      <th>Datum</th>
+                      <th>Teilnehmer</th>
+                      <th>Status</th>
+                      <th>Aktionen</th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {schulungen.map((schulung) => (
+                      <tr key={schulung.id}>
+                        <td>
+                          <div className="font-bold">{schulung.titel}</div>
+                          <div className="text-sm opacity-50">{schulung.ort || 'Kein Ort'}</div>
+                        </td>
+                        <td>
+                          <span className="badge badge-ghost">
+                            {schulung.typ}
+                          </span>
+                        </td>
+                        <td>{schulung.hersteller}</td>
+                        <td>
+                          <div className="text-sm">
+                            {formatDate(schulung.startDatum)}
+                          </div>
+                          <div className="text-xs opacity-50">
+                            {schulung.dauer} Tag{schulung.dauer !== 1 ? 'e' : ''}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-2">
+                            <span>{schulung._count.anmeldungen}</span>
+                            <span className="text-xs opacity-50">
+                              / {schulung.maxTeilnehmer}
+                            </span>
+                            {schulung._count.anmeldungen >= schulung.maxTeilnehmer && (
+                              <span className="badge badge-error badge-xs">Voll</span>
+                            )}
+                          </div>
+                        </td>
+                        <td>
+                          <span className={`badge ${
+                            schulung.status.toLowerCase() === 'bestaetigt' ? 'badge-success' :
+                            schulung.status.toLowerCase() === 'laufend' ? 'badge-info' :
+                            schulung.status.toLowerCase() === 'abgeschlossen' ? 'badge-neutral' :
+                            'badge-error'
+                          }`}>
+                            {schulung.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="flex gap-2">
+                            <Link
+                              href={`/schulungen/${schulung.id}`}
+                              className="btn btn-ghost btn-xs"
+                            >
+                              Details
+                            </Link>
+                            <Link
+                              href={`/schulungen/${schulung.id}/bearbeiten`}
+                              className="btn btn-ghost btn-xs"
+                            >
+                              Bearbeiten
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h3 className="card-title">Templates</h3>
+              <p className="text-sm opacity-70">Schulungsvorlagen verwalten</p>
+              <div className="card-actions justify-end">
+                <Link href="/templates" className="btn btn-primary btn-sm">
+                  Zu Templates
+                </Link>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h3 className="card-title">Teilnehmer</h3>
+              <p className="text-sm opacity-70">Teilnehmerverwaltung</p>
+              <div className="card-actions justify-end">
+                <button className="btn btn-primary btn-sm" disabled>
+                  Bald verfügbar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="card bg-base-100 shadow-xl">
+            <div className="card-body">
+              <h3 className="card-title">Zertifikate</h3>
+              <p className="text-sm opacity-70">Zertifikate erstellen & verwalten</p>
+              <div className="card-actions justify-end">
+                <button className="btn btn-primary btn-sm" disabled>
+                  Bald verfügbar
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Footer */}
+      <footer className="footer footer-center p-4 bg-base-300 text-base-content mt-8">
+        <div>
+          <p>ROBTEC Schulungssystem v1.4.1 - Dashboard Status-Fix</p>
+          <p className="text-xs opacity-60">© 2024 ROBTEC GmbH - Alle Rechte vorbehalten</p>
+        </div>
+      </footer>
     </div>
   );
 }
