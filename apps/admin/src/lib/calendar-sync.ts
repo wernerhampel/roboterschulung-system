@@ -1,263 +1,308 @@
 import { google } from 'googleapis';
-import { prisma } from './prisma';
+import { PrismaClient } from '@prisma/client';
 
-interface CalendarEvent {
-  id: string;
-  summary: string;
-  description?: string;
-  start: {
-    dateTime?: string;
-    date?: string;
-  };
-  end: {
-    dateTime?: string;
-    date?: string;
-  };
-  location?: string;
-}
+const prisma = new PrismaClient();
 
-interface SyncResult {
-  success: boolean;
-  imported: number;
-  updated: number;
-  checked: number;
-  errors: string[];
-}
+// Google Calendar Setup
+const getCalendarClient = () => {
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set');
+  }
 
-// Hilfsfunktion: Parse Schulungsinfo aus Event-Titel
-function parseSchulungFromTitle(title: string): {
-  hersteller: string;
-  typ: string;
-} {
-  const titleLower = title.toLowerCase();
-  
-  // Hersteller erkennen
-  let hersteller = 'sonstige';
-  if (titleLower.includes('kuka')) hersteller = 'kuka';
-  else if (titleLower.includes('abb')) hersteller = 'abb';
-  else if (titleLower.includes('mitsubishi')) hersteller = 'mitsubishi';
-  else if (titleLower.includes('universal robot') || titleLower.includes('ur')) hersteller = 'universal_robots';
-  
-  // Typ erkennen
-  let typ = 'sonstige';
-  if (titleLower.includes('grundlagen') || titleLower.includes('basic')) typ = 'grundlagen';
-  else if (titleLower.includes('praxis') || titleLower.includes('advanced')) typ = 'praxis';
-  else if (titleLower.includes('online') || titleLower.includes('webinar')) typ = 'online';
-  
-  return { hersteller, typ };
-}
+  const credentials = JSON.parse(
+    Buffer.from(process.env.GOOGLE_SERVICE_ACCOUNT_JSON, 'base64').toString('utf-8')
+  );
 
-// Hilfsfunktion: Berechne Dauer in Tagen
-function calculateDurationDays(start: Date, end: Date): number {
-  const diffTime = Math.abs(end.getTime() - start.getTime());
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-  return diffDays || 1; // Mindestens 1 Tag
-}
+  const auth = new google.auth.GoogleAuth({
+    credentials,
+    scopes: ['https://www.googleapis.com/auth/calendar'],
+  });
 
-export async function importFromGoogleCalendar(): Promise<SyncResult> {
-  const result: SyncResult = {
-    success: false,
-    imported: 0,
-    updated: 0,
-    checked: 0,
-    errors: []
+  return google.calendar({ version: 'v3', auth });
+};
+
+// Schulung zu Google Calendar Event konvertieren
+export const schulungToCalendarEvent = (schulung: any) => {
+  const event = {
+    summary: schulung.titel,
+    description: `${schulung.beschreibung || ''}\n\nTyp: ${schulung.typ}\nHersteller: ${schulung.hersteller}\nMax. Teilnehmer: ${schulung.maxTeilnehmer}\nPreis: ${schulung.preis}€`,
+    location: schulung.ort || '',
+    start: {
+      dateTime: new Date(schulung.startDatum).toISOString(),
+      timeZone: 'Europe/Berlin',
+    },
+    end: {
+      dateTime: new Date(schulung.endDatum).toISOString(),
+      timeZone: 'Europe/Berlin',
+    },
+    colorId: getColorForType(schulung.typ),
+    extendedProperties: {
+      private: {
+        schulungId: schulung.id,
+        typ: schulung.typ,
+        hersteller: schulung.hersteller,
+        status: schulung.status,
+      },
+    },
   };
 
+  return event;
+};
+
+// Farbe basierend auf Schulungstyp
+const getColorForType = (typ: string): string => {
+  const colors: Record<string, string> = {
+    'Grundlagen': '1', // Blau
+    'Fortgeschritten': '5', // Gelb
+    'Wartung': '10', // Grün
+    'Individualschulung': '11', // Rot
+  };
+  return colors[typ] || '1';
+};
+
+// Schulung zu Google Calendar hinzufügen
+export const addToCalendar = async (schulung: any) => {
   try {
-    console.log('[Calendar Sync] Starte Import...');
-
-    // Service Account Auth
-    const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-    const calendarId = process.env.GOOGLE_CALENDAR_ID;
-
-    if (!serviceAccountJson || !calendarId) {
-      throw new Error('Google Calendar Credentials fehlen');
+    if (!process.env.GOOGLE_CALENDAR_ID) {
+      throw new Error('GOOGLE_CALENDAR_ID environment variable is not set');
     }
 
-    const credentials = JSON.parse(Buffer.from(serviceAccountJson, 'base64').toString());
-    
-    const auth = new google.auth.GoogleAuth({
-      credentials,
-      scopes: ['https://www.googleapis.com/auth/calendar.readonly']
+    const calendar = getCalendarClient();
+    const event = schulungToCalendarEvent(schulung);
+
+    const response = await calendar.events.insert({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      requestBody: event,
     });
 
-    const calendar = google.calendar({ version: 'v3', auth });
+    // Update Schulung mit Calendar Event ID
+    await prisma.schulung.update({
+      where: { id: schulung.id },
+      data: {
+        calendarEventId: response.data.id,
+        lastSyncedAt: new Date(),
+      },
+    });
 
-    // Zeitraum: 3 Monate zurück bis 12 Monate voraus
-    const timeMin = new Date();
-    timeMin.setMonth(timeMin.getMonth() - 3);
+    return response.data;
+  } catch (error) {
+    console.error('Error adding to calendar:', error);
+    throw error;
+  }
+};
+
+// Schulung in Google Calendar aktualisieren
+export const updateInCalendar = async (schulung: any) => {
+  try {
+    if (!schulung.calendarEventId) {
+      return addToCalendar(schulung);
+    }
+
+    if (!process.env.GOOGLE_CALENDAR_ID) {
+      throw new Error('GOOGLE_CALENDAR_ID environment variable is not set');
+    }
+
+    const calendar = getCalendarClient();
+    const event = schulungToCalendarEvent(schulung);
+
+    const response = await calendar.events.update({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId: schulung.calendarEventId,
+      requestBody: event,
+    });
+
+    // Update lastSyncedAt
+    await prisma.schulung.update({
+      where: { id: schulung.id },
+      data: {
+        lastSyncedAt: new Date(),
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error('Error updating calendar:', error);
+    throw error;
+  }
+};
+
+// Schulung aus Google Calendar löschen
+export const deleteFromCalendar = async (schulung: any) => {
+  try {
+    if (!schulung.calendarEventId) {
+      return;
+    }
+
+    if (!process.env.GOOGLE_CALENDAR_ID) {
+      throw new Error('GOOGLE_CALENDAR_ID environment variable is not set');
+    }
+
+    const calendar = getCalendarClient();
+
+    await calendar.events.delete({
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      eventId: schulung.calendarEventId,
+    });
+
+    // Entferne Calendar Event ID
+    await prisma.schulung.update({
+      where: { id: schulung.id },
+      data: {
+        calendarEventId: null,
+        lastSyncedAt: new Date(),
+      },
+    });
+  } catch (error) {
+    console.error('Error deleting from calendar:', error);
+    throw error;
+  }
+};
+
+// Sync von Google Calendar zu Datenbank
+export const syncFromCalendar = async () => {
+  try {
+    if (!process.env.GOOGLE_CALENDAR_ID) {
+      throw new Error('GOOGLE_CALENDAR_ID environment variable is not set');
+    }
+
+    const calendar = getCalendarClient();
     
-    const timeMax = new Date();
-    timeMax.setMonth(timeMax.getMonth() + 12);
+    // Hole Events der nächsten 6 Monate
+    const now = new Date();
+    const sixMonthsLater = new Date();
+    sixMonthsLater.setMonth(sixMonthsLater.getMonth() + 6);
 
-    console.log(`[Calendar Sync] Zeitraum: ${timeMin.toISOString()} bis ${timeMax.toISOString()}`);
-    console.log(`[Calendar Sync] Calendar ID: ${calendarId}`);
-
-    // Events laden
     const response = await calendar.events.list({
-      calendarId,
-      timeMin: timeMin.toISOString(),
-      timeMax: timeMax.toISOString(),
+      calendarId: process.env.GOOGLE_CALENDAR_ID,
+      timeMin: now.toISOString(),
+      timeMax: sixMonthsLater.toISOString(),
       singleEvents: true,
-      orderBy: 'startTime'
+      orderBy: 'startTime',
     });
 
     const events = response.data.items || [];
-    console.log(`[Calendar Sync] ${events.length} Events gefunden`);
 
-    result.checked = events.length;
-
-    // Jedes Event verarbeiten
     for (const event of events) {
-      try {
-        if (!event.id || !event.summary) {
-          console.log('[Calendar Sync] Event ohne ID oder Titel übersprungen');
-          continue;
-        }
+      if (!event.id || !event.start?.dateTime || !event.end?.dateTime) {
+        continue;
+      }
 
-        console.log(`[Calendar Sync] Verarbeite: ${event.summary}`);
+      // Prüfe ob Schulung bereits existiert
+      const existingSchulung = await prisma.schulung.findFirst({
+        where: { calendarEventId: event.id },
+      });
 
-        // Start und End Datum parsen
-        let startDate: Date;
-        let endDate: Date;
-
-        if (event.start?.dateTime) {
-          // Zeitbasiertes Event
-          startDate = new Date(event.start.dateTime);
-          endDate = event.end?.dateTime ? new Date(event.end.dateTime) : startDate;
-        } else if (event.start?.date) {
-          // Ganztägiges Event
-          startDate = new Date(event.start.date + 'T00:00:00');
-          endDate = event.end?.date ? new Date(event.end.date + 'T00:00:00') : startDate;
-        } else {
-          console.log('[Calendar Sync] Event ohne gültiges Datum übersprungen');
-          continue;
-        }
-
-        console.log(`[Calendar Sync] Datum: ${startDate.toISOString()} bis ${endDate.toISOString()}`);
-
-        // Parse Schulungsinfo
-        const { hersteller, typ } = parseSchulungFromTitle(event.summary);
-        const dauer = calculateDurationDays(startDate, endDate);
-
-        console.log(`[Calendar Sync] Erkannt: Hersteller=${hersteller}, Typ=${typ}, Dauer=${dauer}`);
-
-        // Prüfe ob Event schon existiert
-        const existing = await prisma.schulung.findUnique({
-          where: { calendarEventId: event.id }
+      if (existingSchulung) {
+        // Update existierende Schulung
+        await prisma.schulung.update({
+          where: { id: existingSchulung.id },
+          data: {
+            titel: event.summary || existingSchulung.titel,
+            beschreibung: event.description,
+            startDatum: new Date(event.start.dateTime),
+            endDatum: new Date(event.end.dateTime),
+            ort: event.location,
+            lastSyncedAt: new Date(),
+          },
         });
-
-        if (existing) {
-          // Update
-          console.log(`[Calendar Sync] Aktualisiere existierende Schulung: ${existing.id}`);
-          
-          await prisma.schulung.update({
-            where: { id: existing.id },
-            data: {
-              titel: event.summary,
-              beschreibung: event.description,
-              typ: typ as any,
-              hersteller: hersteller as any,
-              startDatum: startDate,
-              endDatum: endDate,
-              dauer,
-              ort: event.location,
-              lastSyncedAt: new Date()
-            }
-          });
-
-          result.updated++;
-          console.log(`[Calendar Sync] ✅ Aktualisiert!`);
-
-        } else {
-          // Neu erstellen
-          console.log(`[Calendar Sync] Erstelle neue Schulung`);
-          
-          const schulung = await prisma.schulung.create({
-            data: {
-              titel: event.summary,
-              beschreibung: event.description,
-              typ: typ as any,
-              hersteller: hersteller as any,
-              startDatum: startDate,
-              endDatum: endDate,
-              dauer,
-              maxTeilnehmer: 12, // Standard
-              preis: 0, // Wird später gesetzt
-              status: 'geplant',
-              ort: event.location,
-              calendarEventId: event.id,
-              lastSyncedAt: new Date()
-            }
-          });
-
-          result.imported++;
-          console.log(`[Calendar Sync] ✅ Erstellt mit ID: ${schulung.id}`);
+      } else {
+        // Erstelle neue Schulung nur wenn extendedProperties vorhanden sind
+        if (event.extendedProperties?.private?.schulungId) {
+          continue; // Skip, da dies von uns erstellt wurde
         }
 
-      } catch (eventError) {
-        const errorMsg = `Fehler bei Event ${event.summary}: ${eventError instanceof Error ? eventError.message : 'Unbekannt'}`;
-        console.error(`[Calendar Sync] ${errorMsg}`);
-        result.errors.push(errorMsg);
+        // Berechne Dauer in Tagen
+        const start = new Date(event.start.dateTime);
+        const end = new Date(event.end.dateTime);
+        const dauer = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+
+        // Erstelle neue Schulung mit korrektem Status-Enum
+        await prisma.schulung.create({
+          data: {
+            titel: event.summary || 'Unbekannte Schulung',
+            beschreibung: event.description,
+            typ: 'Grundlagen', // Standard
+            hersteller: 'Diverse', // Standard
+            startDatum: new Date(event.start.dateTime),
+            endDatum: new Date(event.end.dateTime),
+            dauer: dauer,
+            maxTeilnehmer: 12, // Standard
+            preis: 0, // Wird später gesetzt
+            status: 'bestaetigt', // ✅ FIX: Verwendet korrekten Enum-Wert
+            ort: event.location,
+            calendarEventId: event.id,
+            lastSyncedAt: new Date(),
+          },
+        });
       }
     }
 
-    result.success = true;
-    console.log(`[Calendar Sync] ✅ Import abgeschlossen: ${result.imported} neu, ${result.updated} aktualisiert`);
+    return { synced: events.length };
+  } catch (error) {
+    console.error('Error syncing from calendar:', error);
+    throw error;
+  }
+};
 
-    // Log in DB speichern
-    await prisma.syncLog.create({
-      data: {
-        typ: 'import_calendar',
-        status: 'completed',
-        eventsGeprueft: result.checked,
-        eventsImportiert: result.imported,
-        eventsAktualisiert: result.updated,
-        fehler: result.errors.length,
-        fehlermeldung: result.errors.join('\n'),
-        completedAt: new Date()
-      }
+// Vollständiger Sync (bidirektional)
+export const fullSync = async () => {
+  try {
+    // 1. Sync von Calendar zu DB
+    await syncFromCalendar();
+
+    // 2. Sync von DB zu Calendar (für Schulungen ohne calendarEventId)
+    const schulungenOhneEvent = await prisma.schulung.findMany({
+      where: {
+        calendarEventId: null,
+        status: {
+          not: 'abgesagt',
+        },
+      },
     });
 
-  } catch (error) {
-    result.success = false;
-    const errorMsg = error instanceof Error ? error.message : 'Unbekannter Fehler';
-    result.errors.push(errorMsg);
-    console.error('[Calendar Sync] Fehler beim Import:', errorMsg);
-
-    // Error Log
-    try {
-      await prisma.syncLog.create({
-        data: {
-          typ: 'import_calendar',
-          status: 'failed',
-          eventsGeprueft: result.checked,
-          eventsImportiert: result.imported,
-          eventsAktualisiert: result.updated,
-          fehler: result.errors.length,
-          fehlermeldung: errorMsg,
-          completedAt: new Date()
-        }
-      });
-    } catch (logError) {
-      console.error('[Calendar Sync] Konnte Error Log nicht speichern:', logError);
+    for (const schulung of schulungenOhneEvent) {
+      await addToCalendar(schulung);
     }
+
+    // 3. Update bestehende Events
+    const schulungenMitEvent = await prisma.schulung.findMany({
+      where: {
+        calendarEventId: {
+          not: null,
+        },
+        OR: [
+          {
+            lastSyncedAt: null,
+          },
+          {
+            lastSyncedAt: {
+              lt: new Date(Date.now() - 24 * 60 * 60 * 1000), // Älter als 24h
+            },
+          },
+        ],
+      },
+    });
+
+    for (const schulung of schulungenMitEvent) {
+      await updateInCalendar(schulung);
+    }
+
+    return {
+      syncedFromCalendar: schulungenOhneEvent.length,
+      addedToCalendar: schulungenOhneEvent.length,
+      updated: schulungenMitEvent.length,
+    };
+  } catch (error) {
+    console.error('Error in full sync:', error);
+    throw error;
   }
+};
 
-  return result;
-}
-
-export async function exportToGoogleCalendar(): Promise<SyncResult> {
-  const result: SyncResult = {
-    success: false,
-    imported: 0,
-    updated: 0,
-    checked: 0,
-    errors: []
-  };
-
-  // TODO: Export implementieren
-  result.errors.push('Export noch nicht implementiert');
-  
-  return result;
-}
+// Export für API Routes
+export default {
+  addToCalendar,
+  updateInCalendar,
+  deleteFromCalendar,
+  syncFromCalendar,
+  fullSync,
+};
