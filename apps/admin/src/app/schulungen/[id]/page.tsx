@@ -1,619 +1,724 @@
-'use client';
-
-import { useEffect, useState } from 'react';
+import { PrismaClient } from '@prisma/client';
+import { notFound } from 'next/navigation';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
-import TeilnehmerModal, { TeilnehmerFormData } from '@/components/TeilnehmerModal';
-import SchulungEditModal, { SchulungFormData } from '@/components/SchulungEditModal';
-import ZertifikatGeneratorModal from '@/components/ZertifikatGeneratorModal';
+import { formatDate, formatCurrency, formatDuration, getSchulungsTypLabel, getHerstellerLabel, getStatusColor, calculateAuslastung, getFreiePlaetze } from '@/lib/utils';
 
-interface Schulung {
-  id: string;
-  titel: string;
-  beschreibung?: string;
-  typ: string;
-  hersteller: string;
-  startDatum: string;
-  endDatum: string;
-  dauer: number;
-  maxTeilnehmer: number;
-  preis: number;
-  status: string;
-  ort?: string;
-  raum?: string;
-  trainer?: string;
-  calendarEventId?: string;
-  lastSyncedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-  _count?: {
-    anmeldungen: number;
-  };
-}
+const prisma = new PrismaClient();
 
-interface Anmeldung {
-  id: string;
-  status: string;
-  anmeldedatum: string;
-  bezahlstatus: string;
-  teilnehmer: {
+interface PageProps {
+  params: {
     id: string;
-    vorname: string;
-    nachname: string;
-    email: string;
-    firma?: string;
-    telefon?: string;
   };
 }
 
-export default function SchulungDetailsPage() {
-  const params = useParams();
-  const router = useRouter();
-  const id = params?.id as string;
-  
-  const [schulung, setSchulung] = useState<Schulung | null>(null);
-  const [anmeldungen, setAnmeldungen] = useState<Anmeldung[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  
-  // Modal states
-  const [showTeilnehmerModal, setShowTeilnehmerModal] = useState(false);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [showZertifikatModal, setShowZertifikatModal] = useState(false);
-  const [actionLoading, setActionLoading] = useState(false);
-
-  useEffect(() => {
-    if (id) {
-      loadSchulungDetails();
-    }
-  }, [id]);
-
-  async function loadSchulungDetails() {
-    try {
-      setLoading(true);
-      
-      // Schulung laden
-      const schulungRes = await fetch(`/api/schulungen/${id}`);
-      if (!schulungRes.ok) {
-        throw new Error('Schulung nicht gefunden');
-      }
-      const schulungData = await schulungRes.json();
-      setSchulung(schulungData);
-
-      // Anmeldungen laden
-      const anmeldungenRes = await fetch(`/api/schulungen/${id}/anmeldungen`);
-      if (anmeldungenRes.ok) {
-        const anmeldungenData = await anmeldungenRes.json();
-        setAnmeldungen(anmeldungenData);
-      }
-
-      setError(null);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Ein Fehler ist aufgetreten');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleTeilnehmerSave(data: TeilnehmerFormData) {
-    const response = await fetch(`/api/schulungen/${id}/anmeldungen`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        teilnehmer: {
-          vorname: data.vorname,
-          nachname: data.nachname,
-          email: data.email,
-          telefon: data.telefon,
-          firma: data.firma,
-          position: data.position,
-          strasse: data.strasse,
-          plz: data.plz,
-          ort: data.ort,
-          land: data.land
+async function getSchulungDetails(id: string) {
+  const schulung = await prisma.schulung.findUnique({
+    where: { id },
+    include: {
+      anmeldungen: {
+        include: {
+          teilnehmer: true
         },
-        status: data.status,
-        bezahlstatus: data.bezahlstatus,
-        bemerkungen: data.bemerkungen
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Fehler beim Speichern');
-    }
-
-    // Reload data
-    await loadSchulungDetails();
-  }
-
-  async function handleSchulungSave(data: SchulungFormData) {
-    const response = await fetch(`/api/schulungen/${id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(data)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Fehler beim Speichern');
-    }
-
-    // Reload data
-    await loadSchulungDetails();
-  }
-
-  async function handleDelete() {
-    if (!confirm('Möchten Sie diese Schulung wirklich löschen?')) {
-      return;
-    }
-
-    try {
-      setActionLoading(true);
-      const response = await fetch(`/api/schulungen/${id}`, {
-        method: 'DELETE'
-      });
-
-      if (!response.ok) {
-        throw new Error('Fehler beim Löschen');
+        orderBy: {
+          anmeldedatum: 'asc'
+        }
+      },
+      _count: {
+        select: {
+          anmeldungen: true,
+          zertifikate: true
+        }
       }
-
-      // Redirect to list
-      router.push('/schulungen');
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Fehler beim Löschen');
-    } finally {
-      setActionLoading(false);
     }
+  });
+
+  await prisma.$disconnect();
+  return schulung;
+}
+
+// Lernziele basierend auf Schulungstyp
+function getLernziele(typ: string, hersteller: string) {
+  const base = {
+    grundlagen: [
+      'Verständnis der Roboter-Grundlagen und Sicherheitsvorschriften',
+      'Bedienung des Teach-Pendants',
+      'Erstellen und Editieren einfacher Programme',
+      'Ausführen von Grundbewegungen und Werkzeugwechsel',
+      'Fehlerdiagnose und Behebung häufiger Probleme'
+    ],
+    fortgeschritten: [
+      'Erweiterte Programmierung mit komplexen Bewegungsabläufen',
+      'Integration von Sensoren und externen Geräten',
+      'Optimierung von Zykluszeiten',
+      'Erweiterte Fehlerdiagnose',
+      'Programmierung von Sonderfunktionen'
+    ],
+    wartung: [
+      'Durchführung regelmäßiger Wartungsarbeiten',
+      'Austausch von Verschleißteilen',
+      'Kalibrierung und Vermessung',
+      'Backup und Wiederherstellung',
+      'Präventive Instandhaltung'
+    ],
+    individualschulung: [
+      'Individuell auf Ihre Anforderungen zugeschnitten',
+      'Fokus auf spezifische Anwendungsfälle',
+      'Praxisorientierte Übungen',
+      'Flexible Inhaltsgestaltung'
+    ]
+  };
+
+  return base[typ as keyof typeof base] || base.grundlagen;
+}
+
+// Agenda basierend auf Schulungstyp
+function getAgenda(typ: string, dauer: number) {
+  if (typ === 'grundlagen') {
+    return [
+      {
+        tag: 1,
+        titel: 'Einführung & Sicherheit',
+        themen: [
+          'Begrüßung und Vorstellung',
+          'Sicherheitsunterweisung',
+          'Roboterkomponenten und Aufbau',
+          'NOT-HALT und Sicherheitseinrichtungen',
+          'Praktische Übungen: Roboter ein- und ausschalten'
+        ]
+      },
+      {
+        tag: 2,
+        titel: 'Bedienung & Navigation',
+        themen: [
+          'Teach-Pendant Grundlagen',
+          'Menüstruktur und Navigation',
+          'Betriebsarten (T1, T2, Auto)',
+          'Koordinatensysteme',
+          'Manuelle Verfahrung'
+        ]
+      },
+      {
+        tag: 3,
+        titel: 'Erste Programme',
+        themen: [
+          'Programmerstellung',
+          'Bewegungsbefehle (PTP, LIN)',
+          'Punkte teachen',
+          'Programmtest und -optimierung',
+          'Geschwindigkeitseinstellungen'
+        ]
+      },
+      {
+        tag: 4,
+        titel: 'Erweiterte Programmierung',
+        themen: [
+          'Werkzeuge und Bases',
+          'I/O-Signale',
+          'Programmverzweigungen',
+          'Schleifen und Zähler',
+          'Unterprogramme'
+        ]
+      },
+      {
+        tag: 5,
+        titel: 'Fehlerdiagnose',
+        themen: [
+          'Fehlermeldungen verstehen',
+          'Diagnose-Tools',
+          'Häufige Fehler und Lösungen',
+          'Backup und Restore',
+          'Wartungshinweise'
+        ]
+      },
+      {
+        tag: 6,
+        titel: 'Praxis & Abschluss',
+        themen: [
+          'Freie Projektarbeit',
+          'Komplexe Bewegungsabläufe',
+          'Optimierung',
+          'Q&A Session',
+          'Zertifikatsübergabe'
+        ]
+      }
+    ];
   }
 
-  function formatDate(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
+  if (typ === 'fortgeschritten') {
+    return [
+      {
+        tag: 1,
+        titel: 'Wiederholung & Vertiefung',
+        themen: [
+          'Auffrischung Grundlagen',
+          'Koordinatensysteme Advanced',
+          'Interpolationsarten',
+          'Bahnplanung'
+        ]
+      },
+      {
+        tag: 2,
+        titel: 'Erweiterte Programmierung',
+        themen: [
+          'Strukturierte Programmierung',
+          'Datentypen und Arrays',
+          'Mathematische Funktionen',
+          'String-Verarbeitung'
+        ]
+      },
+      {
+        tag: 3,
+        titel: 'Kommunikation & Integration',
+        themen: [
+          'Bus-Systeme',
+          'Profinet/Profibus',
+          'Ethernet/IP',
+          'OPC UA Grundlagen'
+        ]
+      },
+      {
+        tag: 4,
+        titel: 'Optimierung & Projekt',
+        themen: [
+          'Zykluszeit-Optimierung',
+          'Bahnglättung',
+          'Praktisches Projekt',
+          'Abschlusspräsentation'
+        ]
+      }
+    ];
+  }
+
+  if (typ === 'wartung') {
+    return [
+      {
+        tag: 1,
+        titel: 'Wartungsgrundlagen',
+        themen: [
+          'Wartungsplan und Intervalle',
+          'Werkzeuge und Hilfsmittel',
+          'Dokumentation',
+          'Sicherheitsaspekte'
+        ]
+      },
+      {
+        tag: 2,
+        titel: 'Mechanische Wartung',
+        themen: [
+          'Achsgetriebe',
+          'Lager und Schmierung',
+          'Riemen und Ketten',
+          'Kabelführung'
+        ]
+      },
+      {
+        tag: 3,
+        titel: 'Elektrische Systeme & Abschluss',
+        themen: [
+          'Schaltschrank-Wartung',
+          'Kalibrierung',
+          'Software-Updates',
+          'Fehlerdiagnose',
+          'Praktische Übungen'
+        ]
+      }
+    ];
+  }
+
+  // Individualschulung - flexible Agenda
+  const tageArray = [];
+  for (let i = 1; i <= dauer; i++) {
+    tageArray.push({
+      tag: i,
+      titel: `Tag ${i}`,
+      themen: ['Inhalte werden individuell nach Ihren Anforderungen gestaltet']
     });
   }
+  return tageArray;
+}
 
-  function formatDateTime(dateString: string): string {
-    const date = new Date(dateString);
-    return date.toLocaleString('de-DE', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+// Hersteller-spezifische Informationen
+function getHerstellerInfo(hersteller: string) {
+  const info = {
+    kuka: {
+      controller: 'KRC4 / KRC5',
+      software: 'WorkVisual',
+      programmiersprache: 'KRL (KUKA Robot Language)',
+      besonderheiten: ['Inline-Formulare', 'Submit Interpreter', 'Safety Configuration']
+    },
+    abb: {
+      controller: 'IRC5 / OmniCore',
+      software: 'RobotStudio',
+      programmiersprache: 'RAPID',
+      besonderheiten: ['TrueMove', 'QuickMove', 'Integrated Vision']
+    },
+    fanuc: {
+      controller: 'R-30iB / R-30iB Plus',
+      software: 'ROBOGUIDE',
+      programmiersprache: 'KAREL / TP',
+      besonderheiten: ['iRVision', 'Dual Check Safety', 'Zero Down Time']
+    },
+    siemens: {
+      controller: 'SIMATIC S7',
+      software: 'TIA Portal',
+      programmiersprache: 'SCL / LAD / FBD',
+      besonderheiten: ['Safety Integrated', 'Motion Control', 'PROFIsafe']
+    },
+    yaskawa: {
+      controller: 'YRC1000 / YRC1000micro',
+      software: 'MotoSim',
+      programmiersprache: 'INFORM',
+      besonderheiten: ['Arc Welding Package', 'Multiple Robot Control', 'Smart Pendant']
+    },
+    'universal-robots': {
+      controller: 'CB-Series / e-Series',
+      software: 'PolyScope',
+      programmiersprache: 'URScript',
+      besonderheiten: ['Collaborative', 'Easy Programming', 'Vision System']
+    },
+    staeubli: {
+      controller: 'CS9',
+      software: 'SRS (Stäubli Robotics Suite)',
+      programmiersprache: 'VAL3',
+      besonderheiten: ['uniVAL plc', 'Cleanroom Certified', 'High Speed']
+    },
+    kawasaki: {
+      controller: 'E-Controller',
+      software: 'K-ROSET',
+      programmiersprache: 'AS Language',
+      besonderheiten: ['Palletizing Functions', 'Laser Tracking', 'Weld Tech']
+    },
+    denso: {
+      controller: 'RC8',
+      software: 'WINCAPS III',
+      programmiersprache: 'PacScript',
+      besonderheiten: ['High Speed', 'Compact Design', 'Vision Guide']
+    }
+  };
+
+  return info[hersteller.toLowerCase() as keyof typeof info] || {
+    controller: 'Standard Controller',
+    software: 'Hersteller-Software',
+    programmiersprache: 'Hersteller-spezifisch',
+    besonderheiten: []
+  };
+}
+
+export default async function SchulungDetailPage({ params }: PageProps) {
+  const schulung = await getSchulungDetails(params.id);
+
+  if (!schulung) {
+    notFound();
   }
 
-  function getStatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      geplant: 'bg-gray-100 text-gray-800',
-      bestaetigt: 'bg-blue-100 text-blue-800',
-      laufend: 'bg-green-100 text-green-800',
-      abgeschlossen: 'bg-purple-100 text-purple-800',
-      abgesagt: 'bg-red-100 text-red-800'
-    };
-    return colors[status] || colors.geplant;
-  }
-
-  function getStatusLabel(status: string): string {
-    const labels: Record<string, string> = {
-      geplant: 'Geplant',
-      bestaetigt: 'Bestätigt',
-      laufend: 'Läuft',
-      abgeschlossen: 'Abgeschlossen',
-      abgesagt: 'Abgesagt'
-    };
-    return labels[status] || status;
-  }
-
-  function getTypLabel(typ: string): string {
-    const labels: Record<string, string> = {
-      grundlagen: 'Grundlagen',
-      praxis: 'Praxis',
-      online: 'Online',
-      sonstige: 'Sonstige'
-    };
-    return labels[typ] || typ;
-  }
-
-  function getHerstellerLabel(hersteller: string): string {
-    const labels: Record<string, string> = {
-      kuka: 'KUKA',
-      abb: 'ABB',
-      mitsubishi: 'Mitsubishi',
-      universal_robots: 'Universal Robots',
-      sonstige: 'Sonstige'
-    };
-    return labels[hersteller] || hersteller;
-  }
-
-  function getBezahlstatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      offen: 'bg-yellow-100 text-yellow-800',
-      bezahlt: 'bg-green-100 text-green-800',
-      erstattet: 'bg-gray-100 text-gray-800'
-    };
-    return colors[status] || colors.offen;
-  }
-
-  function getAnmeldungsstatusColor(status: string): string {
-    const colors: Record<string, string> = {
-      angemeldet: 'bg-blue-100 text-blue-800',
-      bestaetigt: 'bg-green-100 text-green-800',
-      teilgenommen: 'bg-purple-100 text-purple-800',
-      nicht_erschienen: 'bg-red-100 text-red-800',
-      storniert: 'bg-gray-100 text-gray-800'
-    };
-    return colors[status] || colors.angemeldet;
-  }
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="flex items-center justify-center h-64">
-            <div className="text-center">
-              <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-              <p className="mt-4 text-gray-600">Lade Details...</p>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error || !schulung) {
-    return (
-      <div className="min-h-screen bg-gray-50 p-8">
-        <div className="max-w-7xl mx-auto">
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-            <p className="text-red-800">❌ {error || 'Schulung nicht gefunden'}</p>
-            <Link href="/schulungen" className="text-red-600 hover:text-red-800 mt-4 inline-block">
-              ← Zurück zur Übersicht
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  const freePlaetze = schulung.maxTeilnehmer - (schulung._count?.anmeldungen || 0);
-  const auslastung = Math.round(((schulung._count?.anmeldungen || 0) / schulung.maxTeilnehmer) * 100);
+  const auslastung = calculateAuslastung(schulung._count.anmeldungen, schulung.maxTeilnehmer);
+  const freiePlaetze = getFreiePlaetze(schulung._count.anmeldungen, schulung.maxTeilnehmer);
+  const lernziele = getLernziele(schulung.typ, schulung.hersteller);
+  const agenda = getAgenda(schulung.typ, schulung.dauer);
+  const herstellerInfo = getHerstellerInfo(schulung.hersteller);
 
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-8 py-6">
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div>
               <Link
                 href="/schulungen"
-                className="text-sm text-gray-600 hover:text-gray-900 mb-2 inline-flex items-center"
+                className="text-sm text-gray-500 hover:text-gray-700 mb-2 inline-flex items-center"
               >
                 ← Zurück zur Übersicht
               </Link>
-              <h1 className="text-3xl font-bold text-gray-900 mt-2">{schulung.titel}</h1>
-              <div className="flex items-center gap-3 mt-2">
-                <span className={`inline-flex px-3 py-1 text-sm font-semibold rounded-full ${getStatusColor(schulung.status)}`}>
-                  {getStatusLabel(schulung.status)}
+              <h1 className="text-3xl font-bold text-gray-900 mt-2">
+                {schulung.titel}
+              </h1>
+              <div className="flex items-center gap-4 mt-3">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(schulung.status)}`}>
+                  {schulung.status.charAt(0).toUpperCase() + schulung.status.slice(1)}
                 </span>
-                {schulung.calendarEventId && (
-                  <span className="text-sm text-gray-500">
-                    🗓️ Aus Google Calendar
-                  </span>
-                )}
+                <span className="text-gray-600">
+                  {getSchulungsTypLabel(schulung.typ)}
+                </span>
+                <span className="text-gray-600">•</span>
+                <span className="text-gray-600">
+                  {getHerstellerLabel(schulung.hersteller)}
+                </span>
               </div>
             </div>
-            <div className="flex gap-3">
-              <button 
-                onClick={() => setShowEditModal(true)}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-              >
-                Bearbeiten
-              </button>
-              <button 
-                onClick={() => setShowTeilnehmerModal(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
-              >
-                + Teilnehmer
-              </button>
+            <div className="text-right">
+              <div className="text-3xl font-bold text-blue-600">
+                {formatCurrency(schulung.preis)}
+              </div>
+              <div className="text-sm text-gray-500 mt-1">
+                pro Teilnehmer
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      <div className="max-w-7xl mx-auto px-8 py-8">
-        {/* Info Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="text-gray-600 text-sm mb-1">Teilnehmer</div>
-            <div className="text-3xl font-bold text-gray-900">
-              {schulung._count?.anmeldungen || 0} / {schulung.maxTeilnehmer}
-            </div>
-            <div className="text-sm text-gray-500 mt-1">{auslastung}% belegt</div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="text-gray-600 text-sm mb-1">Freie Plätze</div>
-            <div className={`text-3xl font-bold ${freePlaetze === 0 ? 'text-red-600' : freePlaetze < 3 ? 'text-orange-600' : 'text-green-600'}`}>
-              {freePlaetze}
-            </div>
-            <div className="text-sm text-gray-500 mt-1">verfügbar</div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="text-gray-600 text-sm mb-1">Dauer</div>
-            <div className="text-3xl font-bold text-gray-900">{schulung.dauer}</div>
-            <div className="text-sm text-gray-500 mt-1">Tag{schulung.dauer !== 1 ? 'e' : ''}</div>
-          </div>
-
-          <div className="bg-white p-6 rounded-lg shadow-sm border">
-            <div className="text-gray-600 text-sm mb-1">Preis</div>
-            <div className="text-3xl font-bold text-gray-900">
-              {schulung.preis > 0 ? `${schulung.preis.toLocaleString('de-DE')} €` : 'Kostenlos'}
-            </div>
-            <div className="text-sm text-gray-500 mt-1">pro Person</div>
-          </div>
-        </div>
-
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Linke Spalte: Details */}
+          {/* Hauptinhalt */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Schulungsinformationen */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h2 className="text-xl font-semibold mb-4">Schulungsinformationen</h2>
-              
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <div className="text-sm text-gray-600 mb-1">Typ</div>
-                  <div className="font-medium">{getTypLabel(schulung.typ)}</div>
+            {/* Beschreibung */}
+            {schulung.beschreibung && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                  Beschreibung
+                </h2>
+                <div className="prose max-w-none text-gray-600">
+                  {schulung.beschreibung}
                 </div>
-
-                <div>
-                  <div className="text-sm text-gray-600 mb-1">Hersteller</div>
-                  <div className="font-medium">{getHerstellerLabel(schulung.hersteller)}</div>
-                </div>
-
-                <div>
-                  <div className="text-sm text-gray-600 mb-1">Startdatum</div>
-                  <div className="font-medium">{formatDate(schulung.startDatum)}</div>
-                </div>
-
-                <div>
-                  <div className="text-sm text-gray-600 mb-1">Enddatum</div>
-                  <div className="font-medium">{formatDate(schulung.endDatum)}</div>
-                </div>
-
-                {schulung.ort && (
-                  <div className="col-span-2">
-                    <div className="text-sm text-gray-600 mb-1">Ort</div>
-                    <div className="font-medium">📍 {schulung.ort}</div>
-                  </div>
-                )}
-
-                {schulung.raum && (
-                  <div>
-                    <div className="text-sm text-gray-600 mb-1">Raum</div>
-                    <div className="font-medium">{schulung.raum}</div>
-                  </div>
-                )}
-
-                {schulung.trainer && (
-                  <div>
-                    <div className="text-sm text-gray-600 mb-1">Trainer</div>
-                    <div className="font-medium">{schulung.trainer}</div>
-                  </div>
-                )}
               </div>
+            )}
 
-              {schulung.beschreibung && (
-                <div className="mt-4 pt-4 border-t">
-                  <div className="text-sm text-gray-600 mb-2">Beschreibung</div>
-                  <div className="text-gray-800 whitespace-pre-wrap">{schulung.beschreibung}</div>
-                </div>
-              )}
+            {/* Lernziele */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                🎯 Lernziele
+              </h2>
+              <ul className="space-y-3">
+                {lernziele.map((ziel, index) => (
+                  <li key={index} className="flex items-start">
+                    <span className="text-green-500 mr-3 mt-1">✓</span>
+                    <span className="text-gray-600">{ziel}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
-            {/* Teilnehmerliste */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-semibold">Teilnehmer ({anmeldungen.length})</h2>
-                <button 
-                  onClick={() => setShowTeilnehmerModal(true)}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                >
-                  + Teilnehmer hinzufügen
-                </button>
-              </div>
-
-              {anmeldungen.length === 0 ? (
-                <div className="text-center py-12 text-gray-500">
-                  <div className="text-4xl mb-2">👥</div>
-                  <p>Noch keine Anmeldungen</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead className="bg-gray-50 border-b">
-                      <tr>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Firma</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Bezahlt</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Anmeldung</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Aktionen</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {anmeldungen.map((anmeldung) => (
-                        <tr key={anmeldung.id} className="hover:bg-gray-50">
-                          <td className="px-4 py-3">
-                            <div className="font-medium text-gray-900">
-                              {anmeldung.teilnehmer.vorname} {anmeldung.teilnehmer.nachname}
-                            </div>
-                            <div className="text-sm text-gray-500">{anmeldung.teilnehmer.email}</div>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-900">
-                            {anmeldung.teilnehmer.firma || '-'}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getAnmeldungsstatusColor(anmeldung.status)}`}>
-                              {anmeldung.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getBezahlstatusColor(anmeldung.bezahlstatus)}`}>
-                              {anmeldung.bezahlstatus}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-sm text-gray-500">
-                            {formatDate(anmeldung.anmeldedatum)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <button className="text-blue-600 hover:text-blue-800 text-sm">
-                              Details
-                            </button>
-                          </td>
-                        </tr>
+            {/* Agenda */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                📅 Agenda ({formatDuration(schulung.dauer)})
+              </h2>
+              <div className="space-y-4">
+                {agenda.map((tag) => (
+                  <div key={tag.tag} className="border-l-4 border-blue-500 pl-4 py-2">
+                    <h3 className="font-semibold text-gray-900 mb-2">
+                      Tag {tag.tag}: {tag.titel}
+                    </h3>
+                    <ul className="space-y-1">
+                      {tag.themen.map((thema, idx) => (
+                        <li key={idx} className="text-sm text-gray-600 flex items-start">
+                          <span className="mr-2">•</span>
+                          <span>{thema}</span>
+                        </li>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Rechte Spalte: Aktionen & Meta */}
-          <div className="space-y-6">
-            {/* Aktionen */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h3 className="font-semibold mb-4">Aktionen</h3>
-              <div className="space-y-2">
-                <button 
-                  onClick={() => setShowEditModal(true)}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-left"
-                >
-                  📝 Schulung bearbeiten
-                </button>
-                <button 
-                  onClick={() => setShowTeilnehmerModal(true)}
-                  className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-left"
-                >
-                  👥 Teilnehmer hinzufügen
-                </button>
-                <button 
-                  onClick={() => setShowZertifikatModal(true)}
-                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-left"
-                >
-                  🎓 Zertifikat erstellen
-                </button>
-                <button className="w-full px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-left">
-                  📧 E-Mail senden
-                </button>
-                <button 
-                  onClick={handleDelete}
-                  disabled={actionLoading}
-                  className="w-full px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 text-left disabled:opacity-50"
-                >
-                  🗑️ Schulung löschen
-                </button>
+                    </ul>
+                  </div>
+                ))}
               </div>
             </div>
 
-            {/* Meta Informationen */}
-            <div className="bg-white rounded-lg shadow-sm border p-6">
-              <h3 className="font-semibold mb-4">System-Informationen</h3>
-              <div className="space-y-3 text-sm">
+            {/* Hersteller-spezifische Infos */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                🤖 Technische Details
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <div className="text-gray-600">ID</div>
-                  <div className="font-mono text-xs text-gray-800 break-all">{schulung.id}</div>
+                  <div className="text-sm text-gray-500 mb-1">Controller</div>
+                  <div className="font-medium text-gray-900">{herstellerInfo.controller}</div>
                 </div>
-                
                 <div>
-                  <div className="text-gray-600">Erstellt</div>
-                  <div className="text-gray-800">{formatDateTime(schulung.createdAt)}</div>
+                  <div className="text-sm text-gray-500 mb-1">Software</div>
+                  <div className="font-medium text-gray-900">{herstellerInfo.software}</div>
                 </div>
+                <div>
+                  <div className="text-sm text-gray-500 mb-1">Programmiersprache</div>
+                  <div className="font-medium text-gray-900">{herstellerInfo.programmiersprache}</div>
+                </div>
+              </div>
+              {herstellerInfo.besonderheiten.length > 0 && (
+                <div className="mt-4">
+                  <div className="text-sm text-gray-500 mb-2">Besonderheiten</div>
+                  <div className="flex flex-wrap gap-2">
+                    {herstellerInfo.besonderheiten.map((item, idx) => (
+                      <span key={idx} className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
-                <div>
-                  <div className="text-gray-600">Aktualisiert</div>
-                  <div className="text-gray-800">{formatDateTime(schulung.updatedAt)}</div>
-                </div>
+            {/* Materialien */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                📚 Enthaltene Materialien
+              </h2>
+              <ul className="space-y-2">
+                <li className="flex items-center text-gray-600">
+                  <span className="mr-3">✓</span>
+                  <span>Umfangreiches Schulungshandbuch (digital & gedruckt)</span>
+                </li>
+                <li className="flex items-center text-gray-600">
+                  <span className="mr-3">✓</span>
+                  <span>Übungsdateien und Beispielprogramme</span>
+                </li>
+                <li className="flex items-center text-gray-600">
+                  <span className="mr-3">✓</span>
+                  <span>Persönliches Teilnahmezertifikat</span>
+                </li>
+                <li className="flex items-center text-gray-600">
+                  <span className="mr-3">✓</span>
+                  <span>3 Monate kostenlosen E-Mail-Support</span>
+                </li>
+                <li className="flex items-center text-gray-600">
+                  <span className="mr-3">✓</span>
+                  <span>Zugang zur Online-Lernplattform</span>
+                </li>
+              </ul>
+            </div>
 
-                {schulung.calendarEventId && (
+            {/* Voraussetzungen */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                📋 Voraussetzungen
+              </h2>
+              <div className="text-gray-600">
+                {schulung.typ === 'grundlagen' && (
+                  <p>Keine Vorkenntnisse erforderlich. Technisches Verständnis ist von Vorteil.</p>
+                )}
+                {schulung.typ === 'fortgeschritten' && (
+                  <p>Abgeschlossene Grundlagenschulung oder gleichwertige Kenntnisse erforderlich.</p>
+                )}
+                {schulung.typ === 'wartung' && (
+                  <p>Grundkenntnisse in Robotik und Elektrotechnik erforderlich.</p>
+                )}
+                {schulung.typ === 'individualschulung' && (
+                  <p>Werden individuell mit Ihnen abgestimmt.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Zielgruppe */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                👥 Zielgruppe
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {schulung.typ === 'grundlagen' && (
                   <>
-                    <div className="pt-3 border-t">
-                      <div className="text-gray-600">Calendar Event ID</div>
-                      <div className="font-mono text-xs text-gray-800 break-all">{schulung.calendarEventId}</div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Maschinenbediener</span>
                     </div>
-                    
-                    {schulung.lastSyncedAt && (
-                      <div>
-                        <div className="text-gray-600">Letzte Sync</div>
-                        <div className="text-gray-800">{formatDateTime(schulung.lastSyncedAt)}</div>
-                      </div>
-                    )}
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Instandhalter</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Techniker</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Quereinsteiger</span>
+                    </div>
+                  </>
+                )}
+                {schulung.typ === 'fortgeschritten' && (
+                  <>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Programmierer</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Anlagenplaner</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Projektleiter</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Systemintegratoren</span>
+                    </div>
+                  </>
+                )}
+                {schulung.typ === 'wartung' && (
+                  <>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Wartungspersonal</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Service-Techniker</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Instandhalter</span>
+                    </div>
+                    <div className="flex items-center text-gray-600">
+                      <span className="mr-2">•</span>
+                      <span>Facility Manager</span>
+                    </div>
                   </>
                 )}
               </div>
             </div>
+
+            {/* Teilnehmerliste */}
+            {schulung.anmeldungen.length > 0 && (
+              <div className="bg-white rounded-lg shadow p-6">
+                <h2 className="text-xl font-semibold text-gray-900 mb-4">
+                  👥 Teilnehmerliste ({schulung.anmeldungen.length})
+                </h2>
+                <div className="space-y-3">
+                  {schulung.anmeldungen.map((anmeldung) => (
+                    <div key={anmeldung.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                      <div>
+                        <div className="font-medium text-gray-900">
+                          {anmeldung.teilnehmer.vorname} {anmeldung.teilnehmer.nachname}
+                        </div>
+                        {anmeldung.teilnehmer.firma && (
+                          <div className="text-sm text-gray-500">
+                            {anmeldung.teilnehmer.firma}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                          anmeldung.status === 'gebucht' ? 'bg-green-100 text-green-800' :
+                          anmeldung.status === 'reserviert' ? 'bg-yellow-100 text-yellow-800' :
+                          'bg-gray-100 text-gray-800'
+                        }`}>
+                          {anmeldung.status}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Eckdaten */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                📊 Eckdaten
+              </h3>
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm text-gray-500 mb-1">📅 Startdatum</div>
+                  <div className="font-medium text-gray-900">{formatDate(schulung.startDatum)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500 mb-1">🏁 Enddatum</div>
+                  <div className="font-medium text-gray-900">{formatDate(schulung.endDatum)}</div>
+                </div>
+                <div>
+                  <div className="text-sm text-gray-500 mb-1">⏱️ Dauer</div>
+                  <div className="font-medium text-gray-900">{formatDuration(schulung.dauer)}</div>
+                </div>
+                {schulung.ort && (
+                  <div>
+                    <div className="text-sm text-gray-500 mb-1">📍 Ort</div>
+                    <div className="font-medium text-gray-900">{schulung.ort}</div>
+                  </div>
+                )}
+                {schulung.raum && (
+                  <div>
+                    <div className="text-sm text-gray-500 mb-1">🚪 Raum</div>
+                    <div className="font-medium text-gray-900">{schulung.raum}</div>
+                  </div>
+                )}
+                {schulung.trainer && (
+                  <div>
+                    <div className="text-sm text-gray-500 mb-1">👨‍🏫 Trainer</div>
+                    <div className="font-medium text-gray-900">{schulung.trainer}</div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Auslastung */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                📈 Auslastung
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Angemeldet:</span>
+                  <span className="font-medium text-gray-900">
+                    {schulung._count.anmeldungen} / {schulung.maxTeilnehmer}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div
+                    className={`h-3 rounded-full transition-all ${
+                      auslastung >= 90 ? 'bg-red-500' :
+                      auslastung >= 70 ? 'bg-yellow-500' :
+                      'bg-green-500'
+                    }`}
+                    style={{ width: `${auslastung}%` }}
+                  />
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-600">Freie Plätze:</span>
+                  <span className={`font-medium ${
+                    freiePlaetze === 0 ? 'text-red-600' :
+                    freiePlaetze <= 3 ? 'text-yellow-600' :
+                    'text-green-600'
+                  }`}>
+                    {freiePlaetze}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Aktionen */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
+                ⚡ Aktionen
+              </h3>
+              <div className="space-y-3">
+                <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                  Teilnehmer hinzufügen
+                </button>
+                <button className="w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors">
+                  Bearbeiten
+                </button>
+                <Link
+                  href={`/schulungen/${schulung.id}/zertifikate`}
+                  className="block w-full px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-center"
+                >
+                  Zertifikate verwalten
+                </Link>
+              </div>
+            </div>
+
+            {/* Kontakt */}
+            <div className="bg-blue-50 rounded-lg p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">
+                💬 Fragen?
+              </h3>
+              <p className="text-sm text-gray-600 mb-4">
+                Kontaktieren Sie uns für weitere Informationen oder individuelle Anpassungen.
+              </p>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center text-gray-700">
+                  <span className="mr-2">📧</span>
+                  <span>info@robtec.de</span>
+                </div>
+                <div className="flex items-center text-gray-700">
+                  <span className="mr-2">📞</span>
+                  <span>+49 123 456789</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Modals */}
-      {schulung && (
-        <>
-          <TeilnehmerModal
-            isOpen={showTeilnehmerModal}
-            onClose={() => setShowTeilnehmerModal(false)}
-            onSave={handleTeilnehmerSave}
-            schulungId={schulung.id || id}
-          />
-
-          <SchulungEditModal
-            isOpen={showEditModal}
-            onClose={() => setShowEditModal(false)}
-            onSave={handleSchulungSave}
-            schulung={{
-              id: schulung.id,
-              titel: schulung.titel,
-              beschreibung: schulung.beschreibung,
-              typ: schulung.typ,
-              hersteller: schulung.hersteller,
-              startDatum: schulung.startDatum,
-              endDatum: schulung.endDatum,
-              dauer: schulung.dauer,
-              maxTeilnehmer: schulung.maxTeilnehmer,
-              preis: schulung.preis,
-              status: schulung.status,
-              ort: schulung.ort,
-              raum: schulung.raum,
-              trainer: schulung.trainer
-            }}
-          />
-
-          <ZertifikatGeneratorModal
-            isOpen={showZertifikatModal}
-            onClose={() => {
-              setShowZertifikatModal(false);
-              loadSchulungDetails(); // Reload to update hasZertifikat status
-            }}
-            schulungId={schulung.id}
-            schulungTitel={schulung.titel}
-            teilnehmer={anmeldungen.map(a => ({
-              id: a.teilnehmer.id,
-              vorname: a.teilnehmer.vorname,
-              nachname: a.teilnehmer.nachname,
-              firma: a.teilnehmer.firma,
-              hasZertifikat: false // TODO: Add to API response
-            }))}
-          />
-        </>
-      )}
     </div>
   );
 }
