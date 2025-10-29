@@ -593,8 +593,8 @@ export default async function SchulungDetailPage({ params }: PageProps) {
                       </div>
                       <div className="flex items-center gap-2">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          anmeldung.status === 'gebucht' ? 'bg-green-100 text-green-800' :
-                          anmeldung.status === 'reserviert' ? 'bg-yellow-100 text-yellow-800' :
+                          anmeldung.status.toLowerCase() === 'gebucht' ? 'bg-green-100 text-green-800' :
+                          anmeldung.status.toLowerCase() === 'reserviert' ? 'bg-yellow-100 text-yellow-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
                           {anmeldung.status}
