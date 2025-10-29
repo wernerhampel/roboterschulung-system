@@ -228,7 +228,7 @@ export const syncFromCalendar = async () => {
             dauer: dauer,
             maxTeilnehmer: 12, // Standard
             preis: 0, // Wird später gesetzt
-            status: 'bestaetigt', // ✅ FIX: Verwendet korrekten Enum-Wert
+            status: 'bestaetigt', // Verwendet korrekten Enum-Wert
             ort: event.location,
             calendarEventId: event.id,
             lastSyncedAt: new Date(),
@@ -237,20 +237,24 @@ export const syncFromCalendar = async () => {
       }
     }
 
-    return { synced: events.length };
+    return { 
+      success: true,
+      synced: events.length,
+      message: `${events.length} Events erfolgreich synchronisiert`
+    };
   } catch (error) {
     console.error('Error syncing from calendar:', error);
-    throw error;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unbekannter Fehler beim Importieren',
+      synced: 0
+    };
   }
 };
 
-// Vollständiger Sync (bidirektional)
-export const fullSync = async () => {
+// Export zu Google Calendar (alle Schulungen ohne Event ID)
+export const syncToCalendar = async () => {
   try {
-    // 1. Sync von Calendar zu DB
-    await syncFromCalendar();
-
-    // 2. Sync von DB zu Calendar (für Schulungen ohne calendarEventId)
     const schulungenOhneEvent = await prisma.schulung.findMany({
       where: {
         calendarEventId: null,
@@ -260,9 +264,45 @@ export const fullSync = async () => {
       },
     });
 
+    let exported = 0;
+    const errors: string[] = [];
+
     for (const schulung of schulungenOhneEvent) {
-      await addToCalendar(schulung);
+      try {
+        await addToCalendar(schulung);
+        exported++;
+      } catch (error) {
+        console.error(`Fehler beim Exportieren von Schulung ${schulung.id}:`, error);
+        errors.push(`${schulung.titel}: ${error instanceof Error ? error.message : 'Unbekannter Fehler'}`);
+      }
     }
+
+    return {
+      success: true,
+      exported,
+      total: schulungenOhneEvent.length,
+      errors: errors.length > 0 ? errors : undefined,
+      message: `${exported} von ${schulungenOhneEvent.length} Schulungen exportiert`
+    };
+  } catch (error) {
+    console.error('Error syncing to calendar:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unbekannter Fehler beim Exportieren',
+      exported: 0,
+      total: 0
+    };
+  }
+};
+
+// Vollständiger Sync (bidirektional)
+export const fullSync = async () => {
+  try {
+    // 1. Sync von Calendar zu DB
+    const importResult = await syncFromCalendar();
+
+    // 2. Sync von DB zu Calendar (für Schulungen ohne calendarEventId)
+    const exportResult = await syncToCalendar();
 
     // 3. Update bestehende Events
     const schulungenMitEvent = await prisma.schulung.findMany({
@@ -283,20 +323,35 @@ export const fullSync = async () => {
       },
     });
 
+    let updated = 0;
     for (const schulung of schulungenMitEvent) {
-      await updateInCalendar(schulung);
+      try {
+        await updateInCalendar(schulung);
+        updated++;
+      } catch (error) {
+        console.error(`Fehler beim Update von Schulung ${schulung.id}:`, error);
+      }
     }
 
     return {
-      syncedFromCalendar: schulungenOhneEvent.length,
-      addedToCalendar: schulungenOhneEvent.length,
-      updated: schulungenMitEvent.length,
+      success: importResult.success && exportResult.success,
+      import: importResult,
+      export: exportResult,
+      updated,
+      message: `Sync abgeschlossen: ${importResult.synced} importiert, ${exportResult.exported} exportiert, ${updated} aktualisiert`
     };
   } catch (error) {
     console.error('Error in full sync:', error);
-    throw error;
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unbekannter Fehler beim vollständigen Sync'
+    };
   }
 };
+
+// ✅ NEUE EXPORTS für API-Kompatibilität
+export const importFromGoogleCalendar = syncFromCalendar;
+export const exportToGoogleCalendar = syncToCalendar;
 
 // Export für API Routes
 export default {
@@ -304,5 +359,8 @@ export default {
   updateInCalendar,
   deleteFromCalendar,
   syncFromCalendar,
+  syncToCalendar,
   fullSync,
+  importFromGoogleCalendar,
+  exportToGoogleCalendar,
 };
